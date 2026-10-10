@@ -15,10 +15,10 @@ Starter commit (upstream/main): e5ee445
 | RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
 | RES-102 My Orders crash | done — fixed + tested (bug reproduced on emulator before the fix; emulator re-check after the fix not recorded) | 2b0dde3 | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
-| RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
+| RES-104 Duplicate deals | commit A (race fix) done + tested, not committed yet; commit B (refresh failure path + footer reset) still to do | | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
-| RES-107 Deep link crash | fixed + tested, not committed yet; fix not yet checked in the running app | | See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
+| RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
 | F-1 Countdowns | todo | | |
 | F-2 Impressions | todo | | |
 | F-3 Reservations | todo | | Expiry policy decision: |
@@ -186,13 +186,46 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
 - Not tested by automated tests: the loaded page itself and "Add to bag" after a deep link (the page builds
   `CachedNetworkImage`, which needs platform plugins) → check on the emulator.
 - Known small thing: "Try again" also shows for a 404, where retrying will not help.
-- OPEN — cold start (app fully closed, link via adb): from code reading, GetX builds the stack with ONLY the deal
-  page (`initialRoutesGenerate`), so there would be no Home underneath and no back arrow. NOT verified. User will
-  test with adb after the fix; if confirmed, add a Home button as a SEPARATE commit.
-- Still to do on the emulator: Simulate deep link → deal 42 page loads, Add to bag works; deal card from the feed
-  still opens instantly; a bad link (e.g. id=abc) shows the "not valid" message; then the adb cold-start check.
+- Cold start (link via adb) — CLOSED, AI prediction was WRONG: from reading GetX's `initialRoutesGenerate`, Claude
+  predicted the stack would hold ONLY the deal page (no Home underneath, back would exit the app). The adb test
+  showed deal 42 opens and back returns to Home. So no Home-button commit is needed. Why the prediction was wrong
+  has not been investigated. Caught by testing on the emulator instead of trusting the code reading.
+  (Candidate for AI_LOG.md.)
+- Emulator checks all done (see status row).
+
+## RES-104 notes (2026-10-10) — split into two commits
+- Cause: `refreshDeals` and `loadMore` in `home_controller.dart` shared `_page` and `deals` with no coordination.
+  Refresh set `_page = 1` BEFORE its response; `loadMore` did `_page++` before its response; a `loadMore` response
+  was appended without checking the list was still the one it was requested for. Ticket timeline: loadMore
+  (page 2 in flight) → refresh (page 1 in flight) → page 1 lands (`_page` 1, list = page 1) → page 2 lands and is
+  appended (`_page` still 1, list = pages 1+2) → next loadMore fetches page 2 AGAIN → duplicates. If page 2 lands
+  first it is wiped by the refresh → intermittent.
+- Related faults in the same code: `_page--` on failure goes to 0 if a refresh reset `_page` meanwhile (next
+  loadMore re-fetches page 1); a loadMore started DURING a refresh could make a page be skipped.
+- COMMIT A (race fix): `_generation` goes up when a refresh REPLACES the list (on success, not at start).
+  `loadMore` remembers the generation and the next page number before the `await`, and only applies the response
+  (`_page`, `_totalPages`, `deals` together) if the generation is unchanged. `_page--` removed — `_page` is only
+  assigned after an accepted response. `_isFetchingMore` reset in `finally`. Failure calls `loadFailed()`.
+  No dedup by id.
+- Behaviour change to know: `loadMore` used to `catch (e)` everything; it now catches `ApiException` only, so a
+  programming error is no longer silently logged.
+- Tests A: `test/feature/home/home_controller_test.dart`, tests 1, 2, 3, 4, 6, 8 (Completer-based, one request
+  answered at a time). On the old code: 1, 3, 4, 6 FAILED; 2 and 8 passed — matches the predictions.
+  E.g. test 1 expected `[1, 2]`, actual `[1, 2, 3, 4]`; test 4 expected pages `[1, 2, 1, 2]`, actual `[1, 2, 1, 1]`.
+- Test bug caught on the first run: test 8 failed on the old code with footer "idle" instead of "noMore". The old
+  code was right; the TEST was wrong — pull_to_refresh changes the footer status in an after-frame callback and
+  `tester.pump()` alone draws no frame when none is scheduled. Fixed with a `settle()` helper that schedules a
+  frame. (Candidate for AI_LOG.md: first test draft produced a false failure.)
+- After commit A's fix: home tests 6/6, full suite 36/36, analyze no issues.
+- Race NOT reproduced by hand (window under 1 s); proven by the Completer tests only.
+- COMMIT B (to do): refresh failure path (`refreshFailed()`, no uncaught error, list/page untouched) and
+  `refreshCompleted(resetFooterState: true)`, with tests 5 and 7. Footer bug CONFIRMED on the emulator 2026-10-10
+  (before the fix): loaded pages 1–7, pulled to refresh, then scrolling never loaded page 2 again.
+  Screenshot: docs/before/12_res104_footer_stuck.png (console: pages 1–7, then page 1, then nothing).
+- Not handled on purpose: two overlapping refreshes (the widget does not start a second one); an error screen
+  when the very first load fails.
 
 ## Next step
-- Commit RES-107 after review (emulator checks first), then the adb cold-start check.
+- Commit RES-104 commit A after review. Then commit B.
 - Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.

@@ -24,3 +24,4 @@
 - I modified: RES-101: Claude’s first sketch put the stale check before the error log, so stale failures would leave no trace. It moved the log above the check during implementation.
 - I modified: RES-101 debounce: Claude predicted test 5 would fail on the old code; it passed. It proved the test was still meaningful by temporarily breaking the code (test failed), then restored it.
 - I modified: RES-102: Claude predicted test 2 would pass on the old code; it failed because testWidgets reports any timer still pending after teardown, so every test of the old widget fails. Kept the test as a "still ticks on screen" guard.
+- I modified: RES-104: Claude's first version of test 8 failed on the correct old code. The fault was in the test: pull_to_refresh updates the footer after the next frame, and tester.pump() alone drew no frame. It added a settle() helper and re-ran before trusting the result.

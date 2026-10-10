@@ -4,6 +4,7 @@ import 'package:pull_to_refresh/pull_to_refresh.dart';
 
 import '../../model/deal_model.dart';
 import '../../repository/deal_repo.dart';
+import '../../service/api_exception.dart';
 import '../../util/log_service.dart';
 
 class HomeController extends GetxController {
@@ -23,6 +24,10 @@ class HomeController extends GetxController {
   int _page = 1;
   int _totalPages = 1;
   bool _isFetchingMore = false;
+
+  /// Goes up each time a refresh replaces the list. A loadMore response that
+  /// was requested for an older list must not be added to the new one.
+  int _generation = 0;
 
   bool get hasMore => _page < _totalPages;
 
@@ -56,8 +61,11 @@ class HomeController extends GetxController {
   }
 
   Future<void> refreshDeals() async {
-    _page = 1;
     final res = await dealRepo.fetchDeals(page: 1);
+    // The page number, the page count and the list change together, and only
+    // once the response is here, so they can never disagree.
+    _generation++;
+    _page = 1;
     _totalPages = res.totalPages;
     deals.assignAll(res.items);
     refreshController.refreshCompleted();
@@ -69,18 +77,25 @@ class HomeController extends GetxController {
       refreshController.loadNoData();
       return;
     }
+    final generation = _generation;
+    final nextPage = _page + 1;
     _isFetchingMore = true;
-    _page++;
     try {
-      final res = await dealRepo.fetchDeals(page: _page);
-      _totalPages = res.totalPages;
-      deals.addAll(res.items);
-    } catch (e) {
+      final res = await dealRepo.fetchDeals(page: nextPage);
+      // A refresh may have replaced the list while this page was in flight.
+      // Then this page belongs to the old list and is dropped.
+      if (generation == _generation) {
+        _page = nextPage;
+        _totalPages = res.totalPages;
+        deals.addAll(res.items);
+      }
+      refreshController.loadComplete();
+    } on ApiException catch (e) {
       LogService.error('loadMore failed', e);
-      _page--;
+      refreshController.loadFailed();
+    } finally {
+      _isFetchingMore = false;
     }
-    _isFetchingMore = false;
-    refreshController.loadComplete();
   }
 
   void scrollToTop() {
