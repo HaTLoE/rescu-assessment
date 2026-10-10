@@ -14,11 +14,11 @@ Starter commit (upstream/main): e5ee445
 | Baseline (analyze/test) | done 2026-10-10 | | analyze: no issues. test: 1/1 passed. See "Phase 2 baseline" below |
 | RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
 | RES-102 My Orders crash | done — fixed + tested (bug reproduced on emulator before the fix; emulator re-check after the fix not recorded) | 2b0dde3 | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
-| RES-103 Request pile-up | fixed + tested + confirmed on emulator; not committed yet | | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
+| RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
 | RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
-| RES-107 Deep link crash | todo — cause found by reading code | | See Phase 1 table |
+| RES-107 Deep link crash | fixed + tested, not committed yet; fix not yet checked in the running app | | See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
 | F-1 Countdowns | todo | | |
 | F-2 Impressions | todo | | |
 | F-3 Reservations | todo | | Expiry policy decision: |
@@ -164,7 +164,35 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   the subscriptions that the old controllers had created before the fix. A full restart was needed to start
   with a clean cart service. Lesson: verify lifecycle/leak fixes after a full restart, not a hot reload.
 
+## RES-107 notes (2026-10-10)
+- Cause: `DealDetailsController.onInit` did `deal = Get.arguments as DealModel`. `Get.arguments` is the in-memory
+  object passed in `Get.toNamed(..., arguments: deal)` (deal cards do this). A deep link is only text
+  (`/deal?id=42&source=push`), so arguments is null and the cast throws. The id was in `Get.parameters` all along.
+  `deal` was `late final` and the screen read it synchronously, so there was no way to show "loading".
+- Fix (`deal_details_controller.dart`, `deal_details_screen.dart`): the id from `Get.parameters` is the source of
+  truth. `deal` is now `Rxn<DealModel>`. A passed-in deal is used only as a preload when its id matches the route
+  (or the route has no id) → zero requests from the feed. Otherwise `loadDeal()` fetches via
+  `DealRepo.fetchById` with `isLoading` / `errorMessage`. Missing or malformed id → "This link is not valid.",
+  no request. 404 → "This deal is no longer available." Other `ApiException` → "Could not load this deal."
+  + "Try again". Only `ApiException` is caught, so programming errors still surface.
+- No duplicates: `loadDeal` returns early while loading; the RES-103 cart re-check is skipped until a deal is loaded.
+  `_cartWorker` is still disposed in `onClose`; `isClosed` guard after the load `await` too.
+- Screen: one `Obx` picks spinner / message / the existing page (moved unchanged into `_buildDeal`).
+- Rejected: catch the cast and show an error page (ticket forbids it); look the deal up in the home feed list
+  (paginated, and missing on a cold start); fetch in middleware/binding (no feedback, not built for async).
+- Tests (`test/feature/deal/deal_details_controller_test.dart`): test 1 FAILED on the old code with
+  "type 'Null' is not a subtype of type 'DealModel' in type cast" at deal_details_controller.dart:32 (same as the
+  emulator). After the fix: 10 RES-107 tests + the 3 RES-103 tests = 13/13 pass.
+- Not tested by automated tests: the loaded page itself and "Add to bag" after a deep link (the page builds
+  `CachedNetworkImage`, which needs platform plugins) → check on the emulator.
+- Known small thing: "Try again" also shows for a 404, where retrying will not help.
+- OPEN — cold start (app fully closed, link via adb): from code reading, GetX builds the stack with ONLY the deal
+  page (`initialRoutesGenerate`), so there would be no Home underneath and no back arrow. NOT verified. User will
+  test with adb after the fix; if confirmed, add a Home button as a SEPARATE commit.
+- Still to do on the emulator: Simulate deep link → deal 42 page loads, Add to bag works; deal card from the feed
+  still opens instantly; a bad link (e.g. id=abc) shows the "not valid" message; then the adb cold-start check.
+
 ## Next step
-- Commit RES-103 (emulator check passed).
+- Commit RES-107 after review (emulator checks first), then the adb cold-start check.
 - Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.
