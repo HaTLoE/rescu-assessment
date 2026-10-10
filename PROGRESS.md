@@ -12,12 +12,12 @@ Starter commit (upstream/main): e5ee445
 | Item | Status | Commit | Notes / open questions |
 |---|---|---|---|
 | Baseline (analyze/test) | done 2026-10-10 | | analyze: no issues. test: 1/1 passed. See "Phase 2 baseline" below |
-| RES-101 Search stale results | todo — cause found by reading code | | See Phase 1 table |
+| RES-101 Search stale results | fixed + tested + confirmed on emulator; not committed yet | | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce: later, separate commit |
 | RES-102 My Orders crash | todo — cause found by reading code | | See Phase 1 table |
 | RES-103 Request pile-up | todo — cause found by reading code | | See Phase 1 table |
 | RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
-| RES-106 Pickup times / filter | fixed + tested + confirmed on emulator; not committed yet | | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
+| RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | todo — cause found by reading code | | See Phase 1 table |
 | F-1 Countdowns | todo | | |
 | F-2 Impressions | todo | | |
@@ -81,7 +81,26 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
 - Emulator check done for the card times (see status row). The "Pickup today" filter was checked by tests only,
   not separately confirmed on the emulator.
 
+## RES-101 notes (2026-10-10)
+- Fix: latest-request-wins guard in `lib/feature/search/search_deals_controller.dart`. Each search takes a number
+  (`_latestRequestId`); after the `await`, only the newest number may change `results`, `isLoading`, `hasError`.
+  The number also goes up when the box is cleared, so in-flight requests become stale.
+- New `hasError` flag + "Search failed. Please try again." branch in `search_screen.dart`. When the NEWEST request
+  fails, results are cleared so old results never sit under a different query. Stale failures are logged but ignored.
+- Tests: `test/feature/search/search_deals_controller_test.dart` (5 tests, Completer-based, no real delays).
+  Tests 1-3 FAILED on the old code (e.g. expected `[1]`, actual `[2, 3]`). After the fix: 5/5 pass.
+  Full suite 10/10 pass, analyze no issues.
+- Test fake: `FakeDealRepo extends DealRepo` with `super(api: FakeApiService())`. The API object is never used and
+  `init()` is never called, so no assets are loaded. No production seam was needed.
+- Rejected as the correctness fix: debounce only (requests can still overlap), cancelling (Dart futures cannot be
+  cancelled), comparing the response's query with the text box (counter is simpler).
+- Decided: debounce comes LATER as a separate commit, cancelled in `onClose`, with its own test.
+- Not handled on purpose: every keystroke still sends a request (until debounce); a response that arrives after
+  the screen is closed still writes to the old controller's state, which nothing shows any more.
+- Emulator check done (see status row). The "Search failed" message was checked by tests only: the fake API's
+  search never fails, so it cannot be triggered in the running app.
+
 ## Next step
-- Commit RES-106 after review, then teach-back.
-- Pick the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
+- Commit RES-101 (emulator check passed).
+- Then RES-101 debounce as a separate commit, then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.
