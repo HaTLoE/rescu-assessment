@@ -1,0 +1,61 @@
+﻿Applications Memory Usage (in Kilobytes):
+Uptime: 6068197 Realtime: 6068197
+
+** MEMINFO in pid 15897 [dev.rescu.rescu] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    83391    83356        4       44    84620   138456    91472    42353
+  Dalvik Heap     6260     1268     4876       39     7336     5321     2661     2660
+ Dalvik Other     1663     1556       52        7     1968                           
+        Stack     1332     1332        0        0     1340                           
+       Ashmem       16        0        0        0      564                           
+    Other dev        8        4        4        0      316                           
+     .so mmap    24981      920    22140       19    56288                           
+    .jar mmap     2459        0      176        0    35204                           
+    .apk mmap      698        0      592        0     2076                           
+    .ttf mmap      677        0      312        0     3320                           
+    .dex mmap       17        0        0        0      772                           
+    .oat mmap       53        0        0        0     1752                           
+    .art mmap     9277     5668     2680       86    23644                           
+   Other mmap    45299        4    45280        0    46292                           
+      Unknown   127453   127444        4        0   127812                           
+        TOTAL   303779   221552    76120      195   393304   143777    94133    45013
+ 
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:     9616                          30980
+         Native Heap:    83356                          84620
+                Code:    24144                          99528
+               Stack:     1332                           1340
+            Graphics:        0                              0
+       Private Other:   179224
+              System:     6107
+             Unknown:                                  176836
+ 
+           TOTAL PSS:   303779            TOTAL RSS:   393304       TOTAL SWAP PSS:      195
+ 
+ Objects
+               Views:        8         ViewRootImpl:        1
+         AppContexts:        5           Activities:        1
+              Assets:       20        AssetManagers:        0
+       Local Binders:       17        Proxy Binders:       39
+       Parcel memory:        7         Parcel count:       28
+    Death Recipients:        0             WebViews:        0
+ 
+ SQL
+         MEMORY_USED:      105
+  PAGECACHE_OVERFLOW:       46          MALLOC_SIZE:       46
+ 
+ DATABASES
+      pgsz     dbsz   Lookaside(b) cache hits cache misses cache size  Dbname
+PER CONNECTION STATS
+         4       40             95   526    27     7  /data/user/0/dev.rescu.rescu/files/libCachedImageData.db
+POOL STATS
+     cache hits  cache misses    cache size  Dbname
+            526            28           554  /data/user/0/dev.rescu.rescu/files/libCachedImageData.db
+ 
+ Asset Allocations
+    : 1607K
+    : 17K

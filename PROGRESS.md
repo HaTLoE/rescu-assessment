@@ -15,7 +15,7 @@ Starter commit (upstream/main): e5ee445
 | RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
 | RES-102 My Orders crash | done — fixed + tested (bug reproduced on emulator before the fix; emulator re-check after the fix not recorded) | 2b0dde3 | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
-| RES-104 Duplicate deals | commit A (race fix) done; commit B (refresh failure path + footer reset) fixed + tested, not committed yet, not yet checked in the running app | ee103c7 (A) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
+| RES-104 Duplicate deals | done — both commits; footer fix confirmed on emulator (page 2 loads again after refresh); the race itself was never reproduced by hand, proven by tests | ee103c7 (A: race), 64c64b7 (B: refresh failure + footer) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
@@ -234,11 +234,72 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   `_initialLoad` ("initial load failed"). Visible result unchanged (empty feed).
 - Cannot be checked in the running app: the refresh FAILURE path (the fake API's `getDeals` never throws) —
   covered by test 5 only.
-- Still to do on the emulator (full restart): pages 1–7 → pull to refresh → scroll down → page 2 loads again.
+- Emulator check done 2026-10-10: after commit B, page 2 loads again after a refresh. Committed as 64c64b7.
 - Not handled on purpose: two overlapping refreshes (the widget does not start a second one); an error screen
   when the very first load fails.
 
+## RES-105 notes (2026-10-10) — three commits: 1 scope the Obx, 2 lazy list + keys, 3 image decode size
+- All measurements: Android emulator, DEBUG mode. Rebuild counts and oversized-image flags are valid in debug;
+  frame times are NOT representative and are not used as evidence.
+- FRESH BASELINE on today's code (after RES-101…107 fixes, before any RES-105 change), ~30 s scroll,
+  measured by me:
+  - Rebuild Stats: Obx / Scaffold / AppBar / IconButtons 154 builds each; DealCard 855; CachedNetworkImage 927;
+    FlashDealsSection 18. (docs/before/13_res105_rebuilds_top.png, 13_res105_rebuilds_cards.png)
+  - Inspector "Highlight oversized images": every feed image and every flash-rail image is flipped/inverted,
+    i.e. decoded larger than it is shown. (docs/before/13_res105_oversized.png)
+  - `adb shell dumpsys meminfo dev.rescu.rescu` after scrolling pages 1–6 (docs/before/13_res105_meminfo.txt, KB):
+    TOTAL PSS 303,779 · TOTAL RSS 393,304 · Native Heap PSS 83,391 · Private Other 179,224 · Unknown PSS 127,453 ·
+    Graphics 0. Note: Graphics is 0 on this emulator, so image memory is not reported on that line here.
+- Earlier baseline (first row of the status table, morning of 2026-10-10): Scaffold/AppBar ~106, DealCard 501,
+  CachedNetworkImage 709; memory chart flat over pages 1–6.
+- Causes (file refs in the Phase 1 table):
+  1. One `Obx` wraps the whole `Scaffold` and reads `scrollOffset`, written on every scroll tick → app bar, list and
+     button rebuild per tick. Evidence: SUPPORTS (Scaffold/AppBar/IconButtons rebuilt 154x though nothing in them changes).
+  2. Feed is `ListView(children: [...map])` with no keys; `visibleDeals` builds a new list per read. Evidence:
+     PARTLY — DealCard 855 / 154 passes ≈ 5–6 per pass, so only cards near the screen were rebuilt (not all loaded
+     ones), but each of them on every pass. The cost of allocating every card object per pass is not visible in
+     DevTools. Phase 1 wording ("every loaded card") was too strong.
+  3. 1600x1200 images decoded at full size for a 160-pt-tall card. Evidence: the oversized-image highlight SUPPORTS it.
+     Memory growth "until the OS kills the app" was NOT reproduced (flat chart); Flutter's image cache caps at
+     100 MB by default, so a plateau is expected on this emulator.
+- Frame chart (docs/before/01_frames.png): slow frames were on the RASTER side, UI-thread bars tiny. So rebuild
+  fixes are not claimed to fix frame times; no frame-time claims will be made from the emulator.
+- Commit 3 image rule (decided, with a refinement): pass ONE decode dimension so the image keeps its shape —
+  width when the box is at least as wide as the image shape (4:3), otherwise height. Usage audit in the chat/
+  solutions notes; to be re-checked when commit 3 is done.
+
+- COMMIT 1 done (not committed yet, not yet re-measured): `scrollOffset` (RxDouble, written every scroll tick) is
+  replaced by two RxBools in `home_controller.dart`: `isScrolled` (offset > 4) and `showScrollToTop` (offset > 800).
+  An RxBool notifies only when it flips. In `home_screen.dart` the one `Obx` around the whole `Scaffold` is replaced
+  by three small ones: around the `AppBar` (in a `PreferredSize`), the body, and the scroll-to-top button.
+  - Tests: new `test/feature/home/home_screen_test.dart` — scroll from offset 10 to 30 (no threshold crossed) and
+    check the `AppBar` and `SmartRefresher` are the SAME objects afterwards (a parent rebuild would create new
+    ones). FAILED on the old code ("the app bar was rebuilt by a scroll that changed nothing in it"), passes now.
+    Plus a threshold test in `home_controller_test.dart` (flags flip at 4/5 and 800/801).
+    Home tests 10/10, full suite 40/40, analyze no issues.
+  - Test-writing slip: the first run also showed two layout-overflow errors — my test screen (400 wide) was too
+    narrow for the test font. Widened to 800; not an app bug.
+  - Diff note: `home_screen.dart` shows ~96 changed lines, but ~17 without whitespace — the rest is re-indentation
+    from removing the outer `Obx`. Two existing one-line `if`s got braces because the formatter wrapped them.
+  - Visible change: the scroll-to-top button now appears/disappears without the Scaffold's built-in scale
+    animation (the Scaffold no longer sees the button being added/removed).
+  - RE-MEASURED after commit 1 (emulator, debug, ~30 s scroll after Clear), measured by me:
+
+    | Widget | Before (fresh baseline) | After commit 1 |
+    |---|---|---|
+    | AppBar / IconButtons | 154 | 2 |
+    | DealCard | 855 | 98 |
+    | CachedNetworkImage | 927 | 98 |
+    | Obx / SmartRefresher (body, home_screen.dart:70/78) | 154 (old outer Obx) | 4–5 |
+
+    Screenshots: docs/after/13_res105_c1_rebuilds_cards.png, docs/after/13_res105_c1_rebuilds_top.png.
+    The AppBar screenshot was taken a bit later in the same run, so the card counts visible IN THAT screenshot are
+    higher than 98; the 98 comes from the cards screenshot.
+  - Frames are STILL janky on the raster side after commit 1 (as expected from the baseline frame chart). So commit 1
+    is evidence of removed rebuilds only — no frame-time improvement is claimed.
+
 ## Next step
-- Commit RES-104 commit B after review (emulator footer check first).
+- Commit RES-105 commit 1. Then commit 2 (lazy list + keys), then capture nothing new before commit 3
+  (image "before" evidence is already in docs/before/13_*).
 - Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.

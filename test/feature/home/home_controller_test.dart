@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get/get.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
@@ -295,5 +296,36 @@ void main() {
 
     expect(ids(controller), [1, 2]);
     expect(controller.refreshController.footerStatus, LoadStatus.idle);
+  });
+
+  testWidgets('the scroll flags flip exactly at their thresholds',
+      (tester) async {
+    final controller = await startWithFirstPage(tester);
+    // Any tall scrollable will do: the flags depend only on the offset.
+    await tester.pumpWidget(MaterialApp(
+      home: ListView(
+        controller: controller.scrollController,
+        children: const [SizedBox(height: 5000)],
+      ),
+    ));
+    expect(controller.isScrolled.value, isFalse);
+    expect(controller.showScrollToTop.value, isFalse);
+
+    controller.scrollController.jumpTo(4);
+    expect(controller.isScrolled.value, isFalse);
+
+    controller.scrollController.jumpTo(5);
+    expect(controller.isScrolled.value, isTrue);
+    expect(controller.showScrollToTop.value, isFalse);
+
+    controller.scrollController.jumpTo(800);
+    expect(controller.showScrollToTop.value, isFalse);
+
+    controller.scrollController.jumpTo(801);
+    expect(controller.showScrollToTop.value, isTrue);
+
+    controller.scrollController.jumpTo(0);
+    expect(controller.isScrolled.value, isFalse);
+    expect(controller.showScrollToTop.value, isFalse);
   });
 }

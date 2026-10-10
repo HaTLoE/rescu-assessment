@@ -16,7 +16,15 @@ class HomeController extends GetxController {
   final flashDeals = <DealModel>[].obs;
   final isLoading = true.obs;
   final todayOnly = false.obs;
-  final scrollOffset = 0.0.obs;
+
+  /// True once the feed is scrolled a little: the app bar shows its shadow.
+  final isScrolled = false.obs;
+
+  /// True once the feed is scrolled far: the scroll-to-top button shows.
+  final showScrollToTop = false.obs;
+
+  static const _shadowOffset = 4.0;
+  static const _scrollToTopOffset = 800.0;
 
   final scrollController = ScrollController();
   final refreshController = RefreshController();
@@ -43,7 +51,12 @@ class HomeController extends GetxController {
   }
 
   void _onScroll() {
-    scrollOffset.value = scrollController.offset;
+    // The screen only needs these two yes/no answers, not the offset itself.
+    // An RxBool notifies only when its value flips, so scrolling no longer
+    // rebuilds anything on every tick.
+    final offset = scrollController.offset;
+    isScrolled.value = offset > _shadowOffset;
+    showScrollToTop.value = offset > _scrollToTopOffset;
   }
 
   Future<void> _initialLoad() async {
