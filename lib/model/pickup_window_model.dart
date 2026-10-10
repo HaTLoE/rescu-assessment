@@ -14,12 +14,24 @@ class PickupWindowModel {
     );
   }
 
-  /// Human readable label, e.g. "17:30 – 21:00".
-  String get label =>
-      '${DateFormat('HH:mm').format(start)} – ${DateFormat('HH:mm').format(end)}';
+  /// Human readable label, e.g. "17:30 – 21:00", in the phone's time zone.
+  /// [start] and [end] stay in UTC; they are converted only here, for display.
+  String get label {
+    final format = DateFormat('HH:mm');
+    return '${format.format(start.toLocal())} – ${format.format(end.toLocal())}';
+  }
 
-  /// Whether pickup starts today.
-  bool get isToday => start.day == DateTime.now().day;
+  /// Whether pickup starts today, by the phone's calendar.
+  bool get isToday => isTodayAt(DateTime.now());
+
+  /// Same as [isToday], but with "now" passed in so tests can fix the clock.
+  bool isTodayAt(DateTime now) {
+    final localStart = start.toLocal();
+    final localNow = now.toLocal();
+    return localStart.year == localNow.year &&
+        localStart.month == localNow.month &&
+        localStart.day == localNow.day;
+  }
 
   /// Whether the store is currently accepting pickups.
   bool get isOpenNow {

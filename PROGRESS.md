@@ -17,7 +17,7 @@ Starter commit (upstream/main): e5ee445
 | RES-103 Request pile-up | todo — cause found by reading code | | See Phase 1 table |
 | RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
-| RES-106 Pickup times / filter | todo — cause found by reading code | | See Phase 1 table. Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone) |
+| RES-106 Pickup times / filter | fixed + tested + confirmed on emulator; not committed yet | | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | todo — cause found by reading code | | See Phase 1 table |
 | F-1 Countdowns | todo | | |
 | F-2 Impressions | todo | | |
@@ -63,6 +63,25 @@ Things to remember when fixing:
 
 No pre-existing failures. Not run: the app itself, any device/emulator build.
 
+## RES-106 notes (2026-10-10)
+- Fix: `label` and `isToday` in `lib/model/pickup_window_model.dart` now convert to local time (`toLocal()`)
+  at the point of display/comparison. Stored `start`/`end` stay UTC. `isToday` compares year + month + day.
+- Test seam: `isTodayAt(DateTime now)` so tests can pass a fixed "now". The app still calls `isToday`.
+- Tests: `test/model/pickup_window_model_test.dart` (4 tests). On the old logic all 4 FAILED on this machine
+  (UTC+8), e.g. label expected `06:00 – 09:30`, actual `22:00 – 01:30`. After the fix: 4/4 pass.
+  Full suite 5/5 pass, analyze no issues.
+- Deliberately NOT handled — overnight windows: "Pickup today" means "pickup STARTS today". At 00:30 a store
+  open 22:00–01:00 has a window that started yesterday, so the filter hides it even though it is open right now.
+  Kept on purpose: it matches the documented meaning of `isToday`; `isOpenNow` already covers "open right now".
+- Consequence of the phone-time-zone decision: a phone outside Bangkok shows shifted times
+  (this dev machine is UTC+8, so the 06:00 bakery shows 07:00). To see 06:00–09:30, set the emulator to Asia/Bangkok.
+- For solutions.md Q3: the label test only catches the bug on a NON-UTC machine (on UTC, local time == UTC, so
+  the old code passes too). CI should therefore run tests with `TZ=Asia/Bangkok` (Linux/macOS).
+  The "same day number, different month" test fails on the old code in every time zone.
+- Emulator check done for the card times (see status row). The "Pickup today" filter was checked by tests only,
+  not separately confirmed on the emulator.
+
 ## Next step
-- Pick the first ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
+- Commit RES-106 after review, then teach-back.
+- Pick the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.
