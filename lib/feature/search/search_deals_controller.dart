@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:get/get.dart';
 
 import '../../model/deal_model.dart';
@@ -18,11 +20,15 @@ class SearchDealsController extends GetxController {
   /// only the request holding this number is allowed to update the state.
   int _latestRequestId = 0;
 
-  void onQueryChanged(String query) {
-    _search(query);
-  }
+  /// How long the user must stop typing before a search is sent.
+  static const debounceDelay = Duration(milliseconds: 300);
 
-  Future<void> _search(String query) async {
+  Timer? _debounce;
+
+  void onQueryChanged(String query) {
+    _debounce?.cancel();
+    // Taken at the keystroke, not when the request is sent, so anything
+    // still in flight is stale as soon as the text changes.
     final requestId = ++_latestRequestId;
     if (query.trim().isEmpty) {
       results.clear();
@@ -34,6 +40,10 @@ class SearchDealsController extends GetxController {
     isLoading.value = true;
     hasSearched.value = true;
     hasError.value = false;
+    _debounce = Timer(debounceDelay, () => _search(query, requestId));
+  }
+
+  Future<void> _search(String query, int requestId) async {
     try {
       final found = await dealRepo.search(query);
       if (requestId != _latestRequestId) return;
@@ -45,5 +55,14 @@ class SearchDealsController extends GetxController {
       hasError.value = true;
     }
     isLoading.value = false;
+  }
+
+  @override
+  void onClose() {
+    _debounce?.cancel();
+    // Makes a request that is still in flight stale, so its response is
+    // ignored after the screen is gone.
+    _latestRequestId++;
+    super.onClose();
   }
 }

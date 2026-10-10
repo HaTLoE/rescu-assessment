@@ -12,7 +12,7 @@ Starter commit (upstream/main): e5ee445
 | Item | Status | Commit | Notes / open questions |
 |---|---|---|---|
 | Baseline (analyze/test) | done 2026-10-10 | | analyze: no issues. test: 1/1 passed. See "Phase 2 baseline" below |
-| RES-101 Search stale results | fixed + tested + confirmed on emulator; not committed yet | | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce: later, separate commit |
+| RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce: later, separate commit |
 | RES-102 My Orders crash | todo — cause found by reading code | | See Phase 1 table |
 | RES-103 Request pile-up | todo — cause found by reading code | | See Phase 1 table |
 | RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
@@ -100,7 +100,26 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
 - Emulator check done (see status row). The "Search failed" message was checked by tests only: the fake API's
   search never fails, so it cannot be triggered in the running app.
 
+## RES-101 debounce notes (2026-10-10, separate commit from the guard)
+- `onQueryChanged` now waits 300 ms (`debounceDelay`) after the last keystroke before sending. The timer lives in
+  the controller (`_debounce`) and is cancelled in `onClose`, and on every new keystroke.
+- The request number is now taken AT THE KEYSTROKE, not when the request is sent. So an older response that
+  arrives during the 300 ms wait is already stale. The spinner shows during the wait.
+- Clearing the box is not debounced: it cancels the timer and resets the screen at once.
+- `onClose` also increments `_latestRequestId`, so a response that arrives after the screen is closed is ignored.
+  (This removes the "not handled" edge case listed in the RES-101 notes above.)
+- 300 ms is a convention / judgement call, not a measured value.
+- Tests: `fakeAsync` is NOT exported by `flutter_test`; using it needs `fake_async` in pubspec.yaml (forbidden).
+  Used `testWidgets` + `tester.pump(duration)` instead — same idea, fake clock, no pubspec change.
+- 5 new tests. On the old code 4 FAILED (e.g. expected no requests, actual `['s', 'su', 'sus', 'sush', 'sushi']`).
+  The 5th ("response arrives while newer text is waiting") PASSED on the old code — the plan wrongly said it would
+  fail. It guards the new keystroke numbering: checked by temporarily taking the number at send time → it failed
+  (expected loading true, actual false) → code restored.
+- The 5 RES-101 tests gained `tester.pump` calls so the request is actually sent; their assertions are unchanged.
+- After: search tests 10/10, full suite 15/15, analyze no issues.
+- Still to do: check on the emulator (console shows one `GET /deals/search` per typed word, not one per letter).
+
 ## Next step
-- Commit RES-101 (emulator check passed).
-- Then RES-101 debounce as a separate commit, then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
+- Commit the RES-101 debounce after review (emulator check first).
+- Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.
