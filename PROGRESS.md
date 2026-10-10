@@ -15,7 +15,7 @@ Starter commit (upstream/main): e5ee445
 | RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
 | RES-102 My Orders crash | done — fixed + tested (bug reproduced on emulator before the fix; emulator re-check after the fix not recorded) | 2b0dde3 | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
-| RES-104 Duplicate deals | commit A (race fix) done + tested, not committed yet; commit B (refresh failure path + footer reset) still to do | | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
+| RES-104 Duplicate deals | commit A (race fix) done; commit B (refresh failure path + footer reset) fixed + tested, not committed yet, not yet checked in the running app | ee103c7 (A) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
@@ -222,10 +222,23 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   `refreshCompleted(resetFooterState: true)`, with tests 5 and 7. Footer bug CONFIRMED on the emulator 2026-10-10
   (before the fix): loaded pages 1–7, pulled to refresh, then scrolling never loaded page 2 again.
   Screenshot: docs/before/12_res104_footer_stuck.png (console: pages 1–7, then page 1, then nothing).
+- COMMIT B done (not committed yet): `refreshDeals` wraps its work in `try` / `on ApiException`. On failure it logs
+  and calls `refreshFailed()`; `_page`, `_totalPages`, `deals` and `_generation` are untouched because they are only
+  changed after a response arrives. On success it calls `refreshCompleted(resetFooterState: true)`, which clears
+  a footer stuck on "no more data" (pull_to_refresh 2.0.0 does not reset it by default and blocks loading in that
+  state).
+- Tests B (5 and 7) on the code after commit A: both FAILED as predicted — test 5 `Expected: null`, `Actual:
+  ApiException(500)` (the error escaped `refreshDeals`); test 7 footer `Expected: idle`, `Actual: noMore`.
+  After the fix: home tests 8/8, full suite 38/38, analyze no issues.
+- Side effect to know: a failed FIRST load is now logged inside `refreshDeals` ("refresh failed") instead of by
+  `_initialLoad` ("initial load failed"). Visible result unchanged (empty feed).
+- Cannot be checked in the running app: the refresh FAILURE path (the fake API's `getDeals` never throws) —
+  covered by test 5 only.
+- Still to do on the emulator (full restart): pages 1–7 → pull to refresh → scroll down → page 2 loads again.
 - Not handled on purpose: two overlapping refreshes (the widget does not start a second one); an error screen
   when the very first load fails.
 
 ## Next step
-- Commit RES-104 commit A after review. Then commit B.
+- Commit RES-104 commit B after review (emulator footer check first).
 - Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.

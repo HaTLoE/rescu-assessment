@@ -61,14 +61,22 @@ class HomeController extends GetxController {
   }
 
   Future<void> refreshDeals() async {
-    final res = await dealRepo.fetchDeals(page: 1);
-    // The page number, the page count and the list change together, and only
-    // once the response is here, so they can never disagree.
-    _generation++;
-    _page = 1;
-    _totalPages = res.totalPages;
-    deals.assignAll(res.items);
-    refreshController.refreshCompleted();
+    try {
+      final res = await dealRepo.fetchDeals(page: 1);
+      // The page number, the page count and the list change together, and
+      // only once the response is here, so they can never disagree.
+      _generation++;
+      _page = 1;
+      _totalPages = res.totalPages;
+      deals.assignAll(res.items);
+      // The list is back to page 1, so a footer stuck on "no more data" must
+      // be allowed to load again.
+      refreshController.refreshCompleted(resetFooterState: true);
+    } on ApiException catch (e) {
+      // Nothing was changed above, so the old list and page stay valid.
+      LogService.error('refresh failed', e);
+      refreshController.refreshFailed();
+    }
   }
 
   Future<void> loadMore() async {

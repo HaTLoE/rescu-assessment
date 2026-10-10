@@ -255,4 +255,45 @@ void main() {
     expect(repo.requestedPages, [1]);
     expect(controller.refreshController.footerStatus, LoadStatus.noMore);
   });
+
+  testWidgets('a failed refresh keeps the list and page and reports failure',
+      (tester) async {
+    final controller = await startWithFirstPage(tester);
+    controller.loadMore();
+    repo.answer(2);
+    await settle(tester);
+    expect(ids(controller), [1, 2, 3, 4]);
+
+    Object? uncaught;
+    controller.refreshDeals().catchError((Object e) {
+      uncaught = e;
+    });
+    repo.fail(1);
+    await settle(tester);
+
+    expect(uncaught, isNull);
+    expect(controller.refreshController.headerStatus, RefreshStatus.failed);
+    expect(ids(controller), [1, 2, 3, 4]);
+
+    controller.loadMore();
+
+    expect(repo.requestedPages.last, 3);
+  });
+
+  testWidgets('a refresh makes "no more data" loadable again', (tester) async {
+    final controller = await startWithFirstPage(tester, totalPages: 2);
+    controller.loadMore();
+    repo.answer(2, totalPages: 2);
+    await settle(tester);
+    controller.loadMore(); // already on the last page
+    await settle(tester);
+    expect(controller.refreshController.footerStatus, LoadStatus.noMore);
+
+    controller.refreshDeals();
+    repo.answer(1, totalPages: 2);
+    await settle(tester);
+
+    expect(ids(controller), [1, 2]);
+    expect(controller.refreshController.footerStatus, LoadStatus.idle);
+  });
 }
