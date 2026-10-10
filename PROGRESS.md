@@ -16,7 +16,7 @@ Starter commit (upstream/main): <fill in from `git log -1 --oneline`>
 | RES-102 My Orders crash | todo | | |
 | RES-103 Request pile-up | todo | | |
 | RES-104 Duplicate deals | todo | | |
-| RES-105 Feed jank / memory | todo | | Need BEFORE DevTools evidence first |
+| RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | todo | | |
 | RES-107 Deep link crash | todo | | |
 | F-1 Countdowns | todo | | |
