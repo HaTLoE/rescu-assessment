@@ -12,8 +12,8 @@ Starter commit (upstream/main): e5ee445
 | Item | Status | Commit | Notes / open questions |
 |---|---|---|---|
 | Baseline (analyze/test) | done 2026-10-10 | | analyze: no issues. test: 1/1 passed. See "Phase 2 baseline" below |
-| RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce: later, separate commit |
-| RES-102 My Orders crash | todo — cause found by reading code | | See Phase 1 table |
+| RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
+| RES-102 My Orders crash | fixed + tested, not committed yet; fix not yet checked in the running app | | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | todo — cause found by reading code | | See Phase 1 table |
 | RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
@@ -117,9 +117,29 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   (expected loading true, actual false) → code restored.
 - The 5 RES-101 tests gained `tester.pump` calls so the request is actually sent; their assertions are unchanged.
 - After: search tests 10/10, full suite 15/15, analyze no issues.
-- Still to do: check on the emulator (console shows one `GET /deals/search` per typed word, not one per letter).
+- Emulator check done: one `GET /deals/search?q=sushi` for a quickly typed word. Committed as 64b794c.
+
+## RES-102 notes (2026-10-10)
+- Cause: `Timer.periodic` started in `initState` of `_PickupCountdownState`, never stored, never cancelled, and
+  the class had no `dispose()`. The timer outlived the widget and called `setState` on a disposed State.
+- Fix (`lib/feature/order/widget/pickup_countdown.dart`): keep the timer in `late final Timer _timer` and cancel
+  it in `dispose()`. No `if (mounted)` check — after `cancel()` the callback never runs, so there is nothing to hide.
+- Owner decision: the widget State owns the timer (it only repaints this widget; start in `initState`, stop in
+  `dispose`). Not moved to `OrdersController`: bigger rewrite, and a per-second repaint is display state.
+- In release builds the old code did not crash (the check is a debug assertion) but leaked one timer + State per
+  active order per visit.
+- Tests: `test/feature/order/widget/pickup_countdown_test.dart` (2 widget tests, fake clock).
+  On the old code BOTH failed: test 1 with "setState() called after dispose(): _PickupCountdownState" at
+  pickup_countdown.dart:22:7 (same as the emulator repro); test 2 with "A Timer is still pending even after the
+  widget tree was disposed". The plan wrongly said test 2 would pass on the old code — `testWidgets` tears the
+  tree down at the end of every test, so any test that builds the old widget hits the leaked timer.
+- Not handled on purpose: the timer keeps ticking after the window opens (text is fixed by then); when more than
+  an hour is left the text changes once a minute but the widget repaints every second.
+- Not tested: the exact countdown text (e.g. "04:59"). The widget reads `DateTime.now()`, which the fake clock
+  does not control; that needs an injected clock (relevant again for F-1).
+- Still to do: check on the emulator that opening My orders and pressing back no longer throws.
 
 ## Next step
-- Commit the RES-101 debounce after review (emulator check first).
+- Commit RES-102 after review (emulator check first).
 - Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.

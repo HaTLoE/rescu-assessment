@@ -15,12 +15,22 @@ class PickupCountdown extends StatefulWidget {
 }
 
 class _PickupCountdownState extends State<PickupCountdown> {
+  late final Timer _timer;
+
   @override
   void initState() {
     super.initState();
-    Timer.periodic(const Duration(seconds: 1), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {});
     });
+  }
+
+  @override
+  void dispose() {
+    // A timer keeps running until it is cancelled, even after its widget is
+    // gone, so this State must stop the timer it started.
+    _timer.cancel();
+    super.dispose();
   }
 
   @override
