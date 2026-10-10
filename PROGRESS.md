@@ -5,8 +5,8 @@ Starter commit (upstream/main): e5ee445
 
 ## Time log (honest, rough)
 | Date | Hours | What |
-|---|---|---|
-| | | |
+---------------------------
+| 2026-10-10 | ~6.5 h | ~1.3 h toolchain/emulator setup; ~0.3 h RES-105 baseline; ~1.2 h Phase 1+2; RES-106 ~0.4 h; RES-101+debounce ~0.7 h; RES-102 ~0.7 h; RES-103 ~0.4 h; RES-107 ~0.5 h; RES-104 ~0.5 h; RES-105 commit 1 ~0.5 h |
 
 ## Status
 | Item | Status | Commit | Notes / open questions |
