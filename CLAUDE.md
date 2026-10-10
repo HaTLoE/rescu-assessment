@@ -32,7 +32,9 @@ It holds the permanent rules. Task instructions come from my prompts.
 6. Never fabricate anything: test results, DevTools numbers, screenshots, commits, time spent, AI mistakes.
    If you could not run a command, say so plainly.
 7. Never weaken or delete a legitimate test to make the suite pass.
-8. Never `git push`, force-push, rewrite history, or send anything external without my explicit approval.
+8. NEVER run `git add`, `git commit`, or `git push`. Propose the commit message and the exact list of files;
+   I run git add/commit myself. Also never force-push, rewrite history, or send anything external
+   without my explicit approval.
 
 ## How to work on a bug ticket (RES-xxx)
 1. Read all relevant code and trace the real data flow. Do not guess the cause from the ticket text.
@@ -42,9 +44,11 @@ It holds the permanent rules. Task instructions come from my prompts.
 5. Smallest robust fix. Prefer deterministic tests (Completer, fakeAsync, injected clock) over real delays.
 6. Run: `dart format` on changed files, focused test, full `flutter test`, `flutter analyze`.
 7. Show me `git diff --stat` and the important hunks. Confirm forbidden files are untouched.
-8. Teach-back (see below), then commit.
+8. Teach-back, then propose the commit (I run git myself).
 
 ## Commits
+- Propose the commit message and the exact list of files; I run git add/commit myself.
+  Never run `git add`, `git commit`, or `git push`.
 - One logical change per commit. Ticket prefix required.
 - Message must say WHAT and WHY, e.g.
   `[RES-101] Ignore stale search responses because out-of-order futures overwrote newer results`
