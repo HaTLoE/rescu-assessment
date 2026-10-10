@@ -22,6 +22,10 @@ class DealDetailsController extends GetxController {
   final _quantityLeft = RxnInt();
   int? get quantityLeft => _quantityLeft.value;
 
+  /// Subscription to the cart. The cart service lives for the whole session,
+  /// so this controller must end the subscription itself in [onClose].
+  late final Worker _cartWorker;
+
   @override
   void onInit() {
     super.onInit();
@@ -33,13 +37,21 @@ class DealDetailsController extends GetxController {
     });
     // Whenever the cart changes, re-check this deal's remaining stock so the
     // details screen never shows stale availability.
-    ever(cartService.itemCount, (_) => _recheckAvailability());
+    _cartWorker = ever(cartService.itemCount, (_) => _recheckAvailability());
   }
 
   Future<void> _recheckAvailability() async {
     LogService.log('re-checking availability for deal ${deal.id}');
     final fresh = await dealRepo.fetchById(deal.id);
+    // The page may have been closed while the request was in flight.
+    if (isClosed) return;
     _quantityLeft.value = fresh.quantityLeft;
+  }
+
+  @override
+  void onClose() {
+    _cartWorker.dispose();
+    super.onClose();
   }
 
   void addToCart() {

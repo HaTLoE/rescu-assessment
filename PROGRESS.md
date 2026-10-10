@@ -13,8 +13,8 @@ Starter commit (upstream/main): e5ee445
 |---|---|---|---|
 | Baseline (analyze/test) | done 2026-10-10 | | analyze: no issues. test: 1/1 passed. See "Phase 2 baseline" below |
 | RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
-| RES-102 My Orders crash | fixed + tested, not committed yet; fix not yet checked in the running app | | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
-| RES-103 Request pile-up | todo — cause found by reading code | | See Phase 1 table |
+| RES-102 My Orders crash | done — fixed + tested (bug reproduced on emulator before the fix; emulator re-check after the fix not recorded) | 2b0dde3 | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
+| RES-103 Request pile-up | fixed + tested + confirmed on emulator; not committed yet | | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
 | RES-104 Duplicate deals | todo — cause found by reading code | | See Phase 1 table |
 | RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
@@ -139,7 +139,32 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   does not control; that needs an injected clock (relevant again for F-1).
 - Still to do: check on the emulator that opening My orders and pressing back no longer throws.
 
+## RES-103 notes (2026-10-10)
+- Cause: `ever(cartService.itemCount, ...)` in `DealDetailsController.onInit`. The returned `Worker` was thrown away
+  and the class had no `onClose`. The subscription is held by `cartService.itemCount`, and `CartService` is
+  permanent, so every closed deal controller kept listening and re-fetching its deal on each cart change.
+- Why GetX did not clean up: in GetX 4.7.3 `ever` only does `listener.listen(...)` and returns the worker; it is
+  not registered with the controller. GetX did delete the controller and call `onClose` — there was just nothing in it.
+- Fix (`lib/feature/deal/deal_details_controller.dart`): keep the worker in `late final Worker _cartWorker`, dispose
+  it in `onClose`. Plus `if (isClosed) return;` after the `await` in `_recheckAvailability`, for a request already
+  in flight when the page closes (a Future cannot be cancelled).
+- The open page still re-checks its own deal on cart changes — intended, unchanged.
+- Rejected: global request dedup. Each dead controller asks for a DIFFERENT deal id, so dedup would not even reduce
+  the burst, and the dead controllers would still be listening and held in memory.
+- Tests: `test/feature/deal/deal_details_controller_test.dart` (3 tests, real GetX lifecycle via `Get.put` /
+  `Get.delete`, Completer-based fake repo). On the old code: test 1 FAILED (expected `[3]`, actual `[1, 2, 3]`),
+  test 3 FAILED (expected 5, actual 0), test 2 passed (regression guard) — all as predicted.
+- Test setup note: the deal is passed with `Get.routing.args = deal` because `onInit` reads `Get.arguments`.
+  This will change with RES-107.
+- Not handled on purpose: if `fetchById` throws, the error is unhandled (the worker does not await the future);
+  the API only throws for an unknown id. Two quick cart changes send two re-checks with no ordering guard; both
+  return the same server value.
+- Emulator check done (see status row). Verification gotcha: the FIRST check, after a hot reload, still showed the
+  old leaked listeners. Hot reload swaps the code but keeps app state, so the permanent `CartService` still held
+  the subscriptions that the old controllers had created before the fix. A full restart was needed to start
+  with a clean cart service. Lesson: verify lifecycle/leak fixes after a full restart, not a hot reload.
+
 ## Next step
-- Commit RES-102 after review (emulator check first).
+- Commit RES-103 (emulator check passed).
 - Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
 - For each: reproduce in the app first, then failing test → fix → passing test.
