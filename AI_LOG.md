@@ -3,10 +3,8 @@
 ## Tools used
 - Claude Code (VS Code extension) — code reading, root-cause analysis, tests, fixes, write-up drafts
 - Claude (claude.ai chat) — reviewing my prompt against PROBLEM.md, planning, CLAUDE.md
-- (add any others: Copilot, ChatGPT, …)
 
 ## Times the AI was wrong or misleading (need ≥ 2 REAL ones)
-<!-- Fill in WHEN it happens. Never invent. -->
 
 ### Example 1
 - Date / ticket:2026-10-10, RES-105 evidence
@@ -30,6 +28,24 @@
 - What the AI suggested/did: Claude Code ran dart format on the whole lib/ and test/ folders instead of only the changed files, which reformatted 5 unrelated files including the forbidden lib/service/fake_api_service.dart.
 - How I caught it: Claude Code noticed it in the formatter output and reported it; I then verified myself with git status and `git diff e5ee445 --stat -- lib/service/fake_api_service.dart assets/data` (empty).
 - What I did instead: restored the files from git, and the rule is now "format only the files you changed".
+
+### Example 5
+- Date / ticket: 2026-10-10, RES-107
+- What the AI suggested: Claude Code read GetX's `initialRoutesGenerate` and predicted that on a cold start the deep link would open with ONLY the deal page in the stack (no Home underneath, back would exit the app), and proposed a possible extra commit adding a Home button.
+- How I caught it: I tested a cold start with adb after the fix: deal 42 opened and back returned to Home.
+- What I did instead: no Home-button commit. The prediction came from reading one function without running it; why it was wrong was not investigated.
+
+### Example 6
+- Date / ticket: 2026-10-11, RES-105 commit 2
+- What the AI suggested: Claude Code said the lazy list + keys change would have little measurable effect ("rebuild counts ≈ commit 1", "DevTools shows little of it"). Claude (chat) predicted about 3-6 DealCard builds per single "Pickup today" toggle.
+- How I caught it: I measured 24 and 27 DealCard builds for single toggles on the commit 2 code (DealCard at home_screen.dart:119 in the screenshot), far above the 3-6 predicted. Those readings were uncontrolled, so I ran a controlled A/B test (same steps on both versions, commit 2 stashed for the "before" run).
+- What I did instead: used the A/B result as the evidence for commit 2: about 3 on/off toggles gave DealCard 102 on the commit 1 code and 15 on the commit 2 code. So commit 2 has its own measured effect, not just a "structural" one.
+
+### Example 7
+- Date / ticket: 2026-10-11, F-1 commit 1
+- What the AI suggested/did: Claude Code wrote the ClockService tests using `Get.delete<ClockService>()` to close the service.
+- How I caught it: the three clock tests failed after implementing (expected 00:00:01, actual 00:00:06 — the clock kept ticking after "closing"). Claude Code then checked the GetX 4.7.3 source: `Get.delete` silently refuses to delete a GetxService unless `force: true` (get_instance.dart:377).
+- What I did instead: the tests use `force: true`; the app code did not change. It also taught me that GetX never closes a service by itself, so the clock's timer runs for the whole app (which is the intended design).
 
 ## Suggestions I modified or rejected (smaller ones)
 - I modified: RES-101: Claude’s first sketch put the stale check before the error log, so stale failures would leave no trace. It moved the log above the check during implementation.

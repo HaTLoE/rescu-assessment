@@ -5,8 +5,10 @@ Starter commit (upstream/main): e5ee445
 
 ## Time log (honest, rough)
 | Date | Hours | What |
----------------------------
+|---|---|---|
 | 2026-10-10 | ~6.5 h | ~1.3 h toolchain/emulator setup; ~0.3 h RES-105 baseline; ~1.2 h Phase 1+2; RES-106 ~0.4 h; RES-101+debounce ~0.7 h; RES-102 ~0.7 h; RES-103 ~0.4 h; RES-107 ~0.5 h; RES-104 ~0.5 h; RES-105 commit 1 ~0.5 h |
+| 2026-10-11 | ~4.5 h | 10:07 to about 14:30: RES-105 commits 2 and 3; F-1 (4 commits); solutions.md draft |
+| Total | ~11 h | |
 
 ## Status
 | Item | Status | Commit | Notes / open questions |
@@ -16,13 +18,13 @@ Starter commit (upstream/main): e5ee445
 | RES-102 My Orders crash | done — fixed + tested + confirmed on emulator | 2b0dde3 | Emulator re-check after the fix: opened My orders and pressed back twice, no "setState() called after dispose()" error (docs/after/09_res102_no_error.png). See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
 | RES-104 Duplicate deals | done — both commits; footer fix confirmed on emulator (page 2 loads again after refresh); the race itself was never reproduced by hand, proven by tests | ee103c7 (A: race), 64c64b7 (B: refresh failure + footer) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
-| RES-105 Feed jank / memory | done — 3 commits, each measured on the emulator in debug mode: (1) DealCard 855→98, AppBar 154→2 per ~30 s scroll; (2) DealCard 102→15 for ~3 filter toggles; (3) feed card decode 1600×1200 (+7821 KB) → 996×747 (+1696 KB). Memory growth "until the OS kills the app" was never reproduced; no frame-time claims. Visual sharpness check after commit 3 not recorded | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys), 5df71e4 (3: image decode size) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
+| RES-105 Feed jank / memory | done — 3 commits, each measured on the emulator in debug mode: (1) DealCard 855→98, AppBar 154→2 per ~30 s scroll; (2) DealCard 102→15 for ~3 filter toggles; (3) feed card decode 1600×1200 (+7821 KB) → 996×747 (+1696 KB). Memory growth "until the OS kills the app" was never reproduced; no frame-time claims. Sharpness after commit 3 checked on the emulator: feed, flash rail, search, details header, My orders and bag all sharp, no stretching | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys), 5df71e4 (3: image decode size) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
-| F-1 Countdowns | in progress — commits 1–2 done (commit 2 measured: only Obx/Text at flash_countdown.dart rebuild per second); commit 3 (Expired state + add blocked) done + confirmed on emulator; commit 4 (remove from bag with notice) done + tested, not committed yet, not yet seen in the running app | 002d49b (1: clock + helpers), 851d7c0 (2: live countdown), 6557fa9 (3: Expired state + add blocked) | See "F-1 plan" and "F-1 notes" below |
-| F-2 Impressions | todo | | |
-| F-3 Reservations | todo | | Expiry policy decision: |
-| solutions.md | todo | | |
+| F-1 Countdowns | done — 4 commits; commit 2 measured (only Obx/Text at flash_countdown.dart rebuild per second); commits 3 and 4 seen on the emulator (screenshots docs/after/14_f1_*.png, 15_f1_snackbar.png, 15_f1_bag_expired_removed.png) | 002d49b (1: clock + helpers), 851d7c0 (2: live countdown), 6557fa9 (3: Expired state + add blocked), 7c5d4c5 (4: remove from bag with notice) | See "F-1 plan" and "F-1 notes" below |
+| F-2 Impressions | NOT attempted (depth over volume) | | Plan sketched in solutions.md section 6 |
+| F-3 Reservations | NOT attempted (depth over volume) | | Plan sketched in solutions.md section 6. Expiry policy still to be confirmed by me |
+| solutions.md | written 2026-10-11, no TODO markers left, not committed yet. AI section lists 7 examples, matching AI_LOG.md. F-3 expiry policy decided (keep the line, mark "hold expired", block checkout until re-reserved, never renew silently) | | Final state when drafted: 102 tests pass, analyze no issues, forbidden files unchanged vs e5ee445 |
 
 ## Phase 1 summary (redone 2026-10-10 in C:\dev\rescu — the earlier run was in an old copy without git)
 
@@ -525,7 +527,11 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
     rule, so it would go through); expiry is judged by the phone's clock.
   - Not verified by me: the snackbar in the real app.
 
+- COMMIT 4 committed as 7c5d4c5. F-1 complete.
+
 ## Next step
-- F-1 commit 4: emulator check, then commit. That completes F-1. Then F-2 / F-3 if time allows, then solutions.md.
+- solutions.md: all TODOs filled; read it through once, then commit with AI_LOG.md and PROGRESS.md.
+- Before submitting: final `flutter analyze` + `flutter test`, and
+  `git diff e5ee445 --stat -- lib/service/fake_api_service.dart assets/data` must be empty.
 - Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
 - Then F-1, then F-2 / F-3 if time allows, then solutions.md.
