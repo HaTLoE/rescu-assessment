@@ -66,6 +66,14 @@ class DealModel {
 
   bool get isFlashSale => flashSaleEndsAt != null;
 
+  /// Whether this deal's flash sale is over at [now]. The sale is over from
+  /// the end time itself onwards. A deal that is not a flash sale never
+  /// expires. "Now" is passed in so tests can fix the clock.
+  bool isFlashExpiredAt(DateTime now) {
+    final endsAt = flashSaleEndsAt;
+    return endsAt != null && !now.isBefore(endsAt);
+  }
+
   int get discountPercent =>
       originalPrice <= 0 ? 0 : (100 - (price / originalPrice * 100)).round();
 }

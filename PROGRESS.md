@@ -16,10 +16,10 @@ Starter commit (upstream/main): e5ee445
 | RES-102 My Orders crash | done — fixed + tested + confirmed on emulator | 2b0dde3 | Emulator re-check after the fix: opened My orders and pressed back twice, no "setState() called after dispose()" error (docs/after/09_res102_no_error.png). See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
 | RES-104 Duplicate deals | done — both commits; footer fix confirmed on emulator (page 2 loads again after refresh); the race itself was never reproduced by hand, proven by tests | ee103c7 (A: race), 64c64b7 (B: refresh failure + footer) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
-| RES-105 Feed jank / memory | in progress — commit 1 of 3 done and re-measured (DealCard 855→98, AppBar 154→2); commit 2 (lazy list + keys) done and A/B measured on the filter toggle (DealCard 102→15); commit 3 (image decode size) in progress | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
+| RES-105 Feed jank / memory | done — 3 commits, each measured on the emulator in debug mode: (1) DealCard 855→98, AppBar 154→2 per ~30 s scroll; (2) DealCard 102→15 for ~3 filter toggles; (3) feed card decode 1600×1200 (+7821 KB) → 996×747 (+1696 KB). Memory growth "until the OS kills the app" was never reproduced; no frame-time claims. Visual sharpness check after commit 3 not recorded | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys), 5df71e4 (3: image decode size) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
-| F-1 Countdowns | todo | | |
+| F-1 Countdowns | in progress — commit 1 of 4 (clock service + pure helpers) done + tested, not committed yet; no visible change yet | | See "F-1 plan" and "F-1 notes" below |
 | F-2 Impressions | todo | | |
 | F-3 Reservations | todo | | Expiry policy decision: |
 | solutions.md | todo | | |
@@ -343,7 +343,7 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
 - Housekeeping 2026-10-11: PROMPT.md's two RES-105 lines now say emulator DEBUG mode (no physical device), matching
   CLAUDE.md (committed as 73d86d0); RES-102 row updated with the emulator re-check.
 
-- COMMIT 3 done 2026-10-11 (not committed yet, not yet re-measured, not yet looked at in the running app):
+- COMMIT 3 done 2026-10-11, committed as 5df71e4:
   `lib/feature/shared_widget/the_network_image.dart` now decodes each image at the size of the box it is shown in.
   - A pure function `decodeSizeForBox(boxWidth, boxHeight, devicePixelRatio)` returns ONE dimension in real pixels
     (so the image keeps its shape): the width when the box is at least as wide as the image shape
@@ -369,11 +369,75 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   - Known trade-off: the same photo shown at different sizes (feed card, flash rail, details header) is decoded
     once per size; each is smaller than one full-size decode.
   - Not handled on purpose: an API image that is not 4:3 could be slightly soft (never a crash).
-  - TO RE-MEASURE / CHECK: see chat steps — console decode-size lines before vs after, meminfo after pages 1–6,
-    and a visual sharpness check of all five places.
+  - RE-MEASURED 2026-10-11, measured by me (emulator, debug, A/B via git stash).
+    Decode lines printed by "Highlight oversized images":
+
+    | Image | Display size (px) | Decode size BEFORE | Extra BEFORE | Decode size AFTER | Extra AFTER |
+    |---|---|---|---|---|---|
+    | Flash rail | 504×236 | 1600×1200 | +9379 KB | 504×378 | +372 KB |
+    | Feed card | 996×420 | 1600×1200 | +7821 KB | 996×747 | +1696 KB |
+
+    Evidence: docs/before/13_res105_decode_lines.png, docs/after/13_res105_decode_lines.png.
+    Feed images are STILL flagged/flipped after the fix because of the cover crop — as corrected before measuring.
+    The remaining "extra" is the cropped-away part of the 4:3 photo, which is still decoded.
+  - `adb shell dumpsys meminfo dev.rescu.rescu` after scrolling pages 1–6 (KB), SINGLE RUN EACH:
+
+    | Line | Before (docs/before/13_res105_meminfo.txt) | After (docs/after/13_res105_c3_meminfo.txt) |
+    |---|---|---|
+    | TOTAL PSS | 303,779 | 261,425 |
+    | Native Heap | 83,391 | 65,383 |
+    | Unknown | 127,453 | 111,005 |
+
+    Caveat: one run each, on an emulator in debug mode, and the "before" run was taken on 2026-10-10 before
+    commits 1–3 — so the difference cannot be attributed to commit 3 alone, and run-to-run variation is unknown.
+    The decode lines above are the direct evidence for commit 3.
+  - Visual sharpness check of the five places (feed/search cards, flash rail, details header, order thumbnails,
+    bag thumbnails): NOT recorded yet.
+
+## F-1 plan (2026-10-11, NOT started — waiting for OK)
+- Facts from the code: 14 of 122 seed deals are flash deals, ending 8 / 15 / 25 / 40 / 55 / 75 minutes after app
+  start (so `hh:mm:ss` and a real expiry after 8 minutes can both be seen on the emulator). Add-to-bag exists in
+  only two places: the details screen button and the "+" on a bag line. Feed and flash-rail cards have no
+  add button; they open the details page.
+- Proposed architecture: one app-wide `ClockService` (GetxService, permanent, registered in `main.dart`) with ONE
+  `Timer.periodic(1 s)` and an injectable clock function; it publishes `now` as an Rx. Remaining time is always
+  computed as `flashSaleEndsAt − now` (never counted down), so there is no drift.
+- Per-second rebuilds: a small `FlashCountdown` widget = `Obx` + `Text` reading `now`. Cards and lists never read
+  `now`. A card learns about expiry through a small builder widget that calls `setState` only when the
+  expired flag flips (once).
+- Expiry: `CartService` owns the rule. `add` refuses an expired flash deal; a worker on the clock removes expired
+  lines from the bag and calls an injected notice function (snackbar), so it works with no bag screen open.
+- Planned commits: (1) clock service + pure helpers, (2) live countdown text in the 3 places,
+  (3) Expired state + add blocked, (4) remove from bag with notice.
+- DECIDED 2026-10-11: (1) tap on an expired card is disabled; (2) the "removed from bag" notice is a snackbar only —
+  documented limit: if a deal expires while the app is in the background, the snackbar may be missed;
+  (3) seconds are rounded UP; (4) `CartService.add` returns bool so "Added to bag" only shows when something was
+  added — call this out as a separate small fix in solutions.md; (5) the clock is always on for the app's life.
+  Also: `ClockService` must be registered before `CartService` in `main.dart`.
+
+## F-1 notes
+- COMMIT 1 done 2026-10-11 (not committed yet). No visible change in the app.
+  - `lib/service/clock_service.dart`: `ClockService` (GetxService) with ONE `Timer.periodic(1 s)` that sets
+    `now` (Rx<DateTime>). The clock is injectable (`readClock`, default `DateTime.now`). Timer started in `onInit`,
+    cancelled in `onClose`. Registered in `main.dart` as permanent, BEFORE `CartService`.
+  - `lib/util/countdown_format.dart`: pure `formatCountdown(Duration)` → `mm:ss`, or `hh:mm:ss` from one hour up;
+    negative → `00:00`; part of a second rounded up.
+  - `lib/model/deal_model.dart`: `isFlashExpiredAt(DateTime now)` — expired from the end time itself onwards;
+    a non-flash deal never expires.
+  - Tests first: all three new test files FAILED TO COMPILE on the old code (`Method not found: 'formatCountdown'`,
+    `'isFlashExpiredAt' isn't defined`, clock service file missing). For brand-new code that is the only possible
+    "red"; there was no old behaviour to assert against.
+  - After implementing: 12 pure tests passed, but the 3 clock tests FAILED — the test bug was mine: `Get.delete`
+    silently refuses to delete a `GetxService` unless `force: true` (GetX 4.7.3 `get_instance.dart:377`), so the
+    tests never closed the service and its timer kept running (expected 00:00:01, actual 00:00:06).
+    Fixed the tests with `force: true`; app code unchanged. (Candidate for AI_LOG.md.)
+  - Consequence worth knowing: in the real app GetX never closes a GetxService, so the clock's `onClose` only runs
+    on a forced delete. The timer living for the whole app is the intended design (decision 5).
+  - After: new tests 15/15 (7 format, 5 expiry, 3 clock), full suite 70/70, analyze no issues.
+  - Not verified by me: that the app still starts on the emulator with the new service registered.
 
 ## Next step
-- RES-105 commit 3: re-measure + visual check on the emulator, then commit (PROGRESS.md also carries the commit 2
-  A/B toggle notes).
+- F-1 commit 1: quick emulator start check, then commit. Then commit 2 (live countdown text in the rail, the feed
+  card and the details screen) — that is where Rebuild Stats gets measured.
 - Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
 - Then F-1, then F-2 / F-3 if time allows, then solutions.md.
