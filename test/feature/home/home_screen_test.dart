@@ -4,8 +4,10 @@ import 'package:get/get.dart';
 import 'package:pull_to_refresh/pull_to_refresh.dart';
 import 'package:rescu/feature/home/home_controller.dart';
 import 'package:rescu/feature/home/home_screen.dart';
+import 'package:rescu/feature/shared_widget/deal_card.dart';
 import 'package:rescu/model/deal_model.dart';
 import 'package:rescu/model/paged_response_model.dart';
+import 'package:rescu/model/pickup_window_model.dart';
 import 'package:rescu/repository/deal_repo.dart';
 import 'package:rescu/service/fake_api_service.dart';
 
@@ -26,10 +28,111 @@ class EmptyDealRepo extends DealRepo {
   Future<List<DealModel>> fetchFlashDeals() async => [];
 }
 
+/// Answers with one fixed page of [deals] and the given [flash] deals.
+class ListDealRepo extends DealRepo {
+  ListDealRepo({required this.deals, this.flash = const []})
+      : super(api: FakeApiService());
+
+  final List<DealModel> deals;
+  final List<DealModel> flash;
+
+  @override
+  Future<PagedResponseModel<DealModel>> fetchDeals({int page = 1}) async {
+    return PagedResponseModel(items: deals, page: 1, totalPages: 1);
+  }
+
+  @override
+  Future<List<DealModel>> fetchFlashDeals() async => flash;
+}
+
+/// Noon today in local time: always "today" for the Pickup today filter.
+DateTime get _noonToday {
+  final now = DateTime.now();
+  return DateTime(now.year, now.month, now.day, 12);
+}
+
+DealModel deal(int id, {bool pickupToday = true}) {
+  final start =
+      pickupToday ? _noonToday : _noonToday.add(const Duration(days: 2));
+  return DealModel(
+    id: id,
+    name: 'Deal $id',
+    description: '',
+    imageUrl: 'https://example.com/deal$id.jpg',
+    originalPrice: 100,
+    price: 50,
+    currencyCode: 'THB',
+    quantityLeft: 1,
+    storeId: 1,
+    storeName: 'Store',
+    storeAddress: '',
+    lat: 0,
+    lng: 0,
+    rating: null,
+    tags: const [],
+    pickupWindow: PickupWindowModel(
+      start: start.toUtc(),
+      end: start.add(const Duration(hours: 2)).toUtc(),
+    ),
+    flashSaleEndsAt: null,
+  );
+}
+
 void main() {
   tearDown(() async {
     await Get.delete<HomeController>();
     Get.reset();
+  });
+
+  Future<void> pumpHome(WidgetTester tester, DealRepo repo) async {
+    Get.put(HomeController(dealRepo: repo));
+    await tester.pumpWidget(const GetMaterialApp(home: HomeScreen()));
+    await tester.pump();
+  }
+
+  testWidgets('each card carries its deal id as its key', (tester) async {
+    await pumpHome(tester, ListDealRepo(deals: [deal(1), deal(2)]));
+
+    final keyed = find.byKey(const ValueKey<int>(1));
+    expect(keyed, findsOneWidget);
+    expect(tester.widget(keyed), isA<DealCard>());
+  });
+
+  testWidgets('only cards near the screen are built', (tester) async {
+    final deals = [for (var id = 1; id <= 40; id++) deal(id)];
+    await pumpHome(tester, ListDealRepo(deals: deals));
+
+    final built = find.byType(DealCard).evaluate().length;
+    expect(built, greaterThan(0));
+    expect(built, lessThan(10));
+  });
+
+  testWidgets('"Pickup today" hides deals that do not start today',
+      (tester) async {
+    await pumpHome(
+      tester,
+      ListDealRepo(deals: [deal(1), deal(2, pickupToday: false)]),
+    );
+    expect(find.text('Deal 1'), findsOneWidget);
+    expect(find.text('Deal 2'), findsOneWidget);
+
+    await tester.tap(find.text('Pickup today'));
+    await tester.pump();
+
+    expect(find.text('Deal 1'), findsOneWidget);
+    expect(find.text('Deal 2'), findsNothing);
+  });
+
+  testWidgets('the flash rail and the header show above the cards',
+      (tester) async {
+    await pumpHome(
+      tester,
+      ListDealRepo(deals: [deal(1)], flash: [deal(9)]),
+    );
+
+    expect(find.text('Flash sales'), findsOneWidget);
+    expect(find.text('Nearby deals'), findsOneWidget);
+    expect(find.text('Deal 1'), findsOneWidget);
   });
 
   testWidgets(

@@ -67,47 +67,63 @@ class HomeScreen extends GetView<HomeController> {
               ],
             )),
       ),
-      body: Obx(() => controller.isLoading.value
-          ? ListView(
-              children: const [
-                ShimmerDealCard(),
-                ShimmerDealCard(),
-                ShimmerDealCard(),
-              ],
-            )
-          : SmartRefresher(
-              controller: controller.refreshController,
-              enablePullDown: true,
-              enablePullUp: true,
-              onRefresh: controller.refreshDeals,
-              onLoading: controller.loadMore,
-              child: ListView(
-                controller: controller.scrollController,
-                children: [
-                  if (controller.flashDeals.isNotEmpty)
-                    FlashDealsSection(deals: controller.flashDeals),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                    child: Row(
-                      children: [
-                        const Text('Nearby deals',
-                            style: TextStyle(
-                                fontSize: 17, fontWeight: FontWeight.bold)),
-                        const Spacer(),
-                        FilterChip(
-                          label: const Text('Pickup today'),
-                          selected: controller.todayOnly.value,
-                          onSelected: (v) => controller.todayOnly.value = v,
-                        ),
-                      ],
-                    ),
+      body: Obx(() {
+        if (controller.isLoading.value) {
+          return ListView(
+            children: const [
+              ShimmerDealCard(),
+              ShimmerDealCard(),
+              ShimmerDealCard(),
+            ],
+          );
+        }
+        // Read once per rebuild: visibleDeals builds a new list on every read.
+        final deals = controller.visibleDeals;
+        return SmartRefresher(
+          controller: controller.refreshController,
+          enablePullDown: true,
+          enablePullUp: true,
+          onRefresh: controller.refreshDeals,
+          onLoading: controller.loadMore,
+          child: CustomScrollView(
+            controller: controller.scrollController,
+            slivers: [
+              if (controller.flashDeals.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: FlashDealsSection(deals: controller.flashDeals),
+                ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      const Text('Nearby deals',
+                          style: TextStyle(
+                              fontSize: 17, fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      FilterChip(
+                        label: const Text('Pickup today'),
+                        selected: controller.todayOnly.value,
+                        onSelected: (v) => controller.todayOnly.value = v,
+                      ),
+                    ],
                   ),
-                  ...controller.visibleDeals
-                      .map((deal) => DealCard(deal: deal)),
-                  const SizedBox(height: 24),
-                ],
+                ),
               ),
-            )),
+              // Lazy: itemBuilder runs only for cards on or near the screen.
+              // The key ties a card's state to its deal, not its position.
+              SliverList.builder(
+                itemCount: deals.length,
+                itemBuilder: (context, index) {
+                  final deal = deals[index];
+                  return DealCard(key: ValueKey(deal.id), deal: deal);
+                },
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
+          ),
+        );
+      }),
       floatingActionButton: Obx(() => controller.showScrollToTop.value
           ? FloatingActionButton.small(
               onPressed: controller.scrollToTop,

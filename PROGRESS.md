@@ -13,10 +13,10 @@ Starter commit (upstream/main): e5ee445
 |---|---|---|---|
 | Baseline (analyze/test) | done 2026-10-10 | | analyze: no issues. test: 1/1 passed. See "Phase 2 baseline" below |
 | RES-101 Search stale results | done — fixed + tested + confirmed on emulator | a2c248e (guard), 64b794c (debounce) | Emulator confirmed 2026-10-10: typing "sushi" quickly ends on sushi results and they stay; clearing the box shows the hint. See "RES-101 notes" below. Debounce done as a separate commit; emulator confirmed 2026-10-10: typing "sushi" quickly shows one `GET /deals/search?q=sushi` |
-| RES-102 My Orders crash | done — fixed + tested (bug reproduced on emulator before the fix; emulator re-check after the fix not recorded) | 2b0dde3 | See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
+| RES-102 My Orders crash | done — fixed + tested + confirmed on emulator | 2b0dde3 | Emulator re-check after the fix: opened My orders and pressed back twice, no "setState() called after dispose()" error (docs/after/09_res102_no_error.png). See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
 | RES-104 Duplicate deals | done — both commits; footer fix confirmed on emulator (page 2 loads again after refresh); the race itself was never reproduced by hand, proven by tests | ee103c7 (A: race), 64c64b7 (B: refresh failure + footer) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
-| RES-105 Feed jank / memory | before-evidence captured | | Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
+| RES-105 Feed jank / memory | in progress — commit 1 of 3 done and re-measured (DealCard 855→98, AppBar 154→2); commit 2 (lazy list + keys) planned; commit 3 (image decode size) to do | e165484 (1: scope the Obx) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
 | F-1 Countdowns | todo | | |
@@ -137,7 +137,7 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   an hour is left the text changes once a minute but the widget repaints every second.
 - Not tested: the exact countdown text (e.g. "04:59"). The widget reads `DateTime.now()`, which the fake clock
   does not control; that needs an injected clock (relevant again for F-1).
-- Still to do: check on the emulator that opening My orders and pressing back no longer throws.
+- Emulator check done after the fix: open/back twice, no error (docs/after/09_res102_no_error.png).
 
 ## RES-103 notes (2026-10-10)
 - Cause: `ever(cartService.itemCount, ...)` in `DealDetailsController.onInit`. The returned `Worker` was thrown away
@@ -268,7 +268,7 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   width when the box is at least as wide as the image shape (4:3), otherwise height. Usage audit in the chat/
   solutions notes; to be re-checked when commit 3 is done.
 
-- COMMIT 1 done (not committed yet, not yet re-measured): `scrollOffset` (RxDouble, written every scroll tick) is
+- COMMIT 1 done, committed as e165484: `scrollOffset` (RxDouble, written every scroll tick) is
   replaced by two RxBools in `home_controller.dart`: `isScrolled` (offset > 4) and `showScrollToTop` (offset > 800).
   An RxBool notifies only when it flips. In `home_screen.dart` the one `Obx` around the whole `Scaffold` is replaced
   by three small ones: around the `AppBar` (in a `PreferredSize`), the body, and the scroll-to-top button.
@@ -298,8 +298,31 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   - Frames are STILL janky on the raster side after commit 1 (as expected from the baseline frame chart). So commit 1
     is evidence of removed rebuilds only — no frame-time improvement is claimed.
 
+- COMMIT 2 done 2026-10-11 (not committed yet, not yet re-measured): in `home_screen.dart` the feed
+  `ListView(children: [...])` is now a `CustomScrollView`: flash rail, header row and bottom spacer each in a
+  `SliverToBoxAdapter`, and the cards in `SliverList.builder` with `DealCard(key: ValueKey(deal.id), ...)`.
+  `visibleDeals` is read once per body rebuild. `SmartRefresher` takes the slivers out of any `ScrollView` child
+  (checked in pull_to_refresh 2.0.0 source), so pull-to-refresh / load-more keep working.
+  - Decided: keys WITHOUT `findChildIndexCallback`. Keys stop Flutter reusing one deal's state for another deal
+    (needed for F-1 / F-2). They do not by themselves keep a card's state when its index changes (filter toggle);
+    add the callback only if measurement shows it matters.
+  - Tests (4 new in `test/feature/home/home_screen_test.dart`, with real deal cards) on the old code, as predicted:
+    test 1 "each card carries its deal id as its key" FAILED (no keyed widget found); tests 2–4 (only cards near
+    the screen are built; "Pickup today" filters; flash rail + header show) passed as regression guards.
+    After the change: home tests 14/14, full suite 44/44, analyze no issues.
+  - Risk that did not materialise: real `DealCard`s build `CachedNetworkImage`; it works under test (only a
+    warning that HTTP calls return 400 in tests).
+  - Honest expectation: rebuild counts ≈ commit 1. This commit is structural (lazy creation of card objects,
+    per-deal identity); DevTools shows little of it. Test 2 passed on the OLD code too — the old list was already
+    lazy at the element level.
+  - Not handled on purpose: duplicate ids from a real backend that paginates by offset (two cards with the same
+    key); the fake catalog is static. Worth one line in solutions.md.
+  - TO RE-MEASURE: same ~30 s Rebuild Stats run; DealCard count for a "Pickup today" toggle on and off;
+    functional check of pull-to-refresh, load-more to "no more data", scroll-to-top, flash rail/header scrolling.
+- Housekeeping 2026-10-11: PROMPT.md's two RES-105 lines now say emulator DEBUG mode (no physical device), matching
+  CLAUDE.md; RES-102 row updated with the emulator re-check.
+
 ## Next step
-- Commit RES-105 commit 1. Then commit 2 (lazy list + keys), then capture nothing new before commit 3
-  (image "before" evidence is already in docs/before/13_*).
-- Then the next ticket (suggested order: RES-106, 101, 102, 103, 104, 107, then RES-105 and F-1).
-- For each: reproduce in the app first, then failing test → fix → passing test.
+- RES-105 commit 2: re-measure + functional check on the emulator, then commit.
+- Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
+- Then F-1, then F-2 / F-3 if time allows, then solutions.md.
