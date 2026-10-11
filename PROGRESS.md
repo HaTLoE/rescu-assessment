@@ -19,7 +19,7 @@ Starter commit (upstream/main): e5ee445
 | RES-105 Feed jank / memory | done — 3 commits, each measured on the emulator in debug mode: (1) DealCard 855→98, AppBar 154→2 per ~30 s scroll; (2) DealCard 102→15 for ~3 filter toggles; (3) feed card decode 1600×1200 (+7821 KB) → 996×747 (+1696 KB). Memory growth "until the OS kills the app" was never reproduced; no frame-time claims. Visual sharpness check after commit 3 not recorded | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys), 5df71e4 (3: image decode size) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
-| F-1 Countdowns | in progress — commits 1–2 done (commit 2 measured: only Obx/Text at flash_countdown.dart rebuild per second); commit 3 (Expired state + add blocked) done + tested, not committed yet, not yet seen in the running app; commit 4 (remove from bag with notice) to do | 002d49b (1: clock + helpers), 851d7c0 (2: live countdown) | See "F-1 plan" and "F-1 notes" below |
+| F-1 Countdowns | in progress — commits 1–2 done (commit 2 measured: only Obx/Text at flash_countdown.dart rebuild per second); commit 3 (Expired state + add blocked) done + confirmed on emulator; commit 4 (remove from bag with notice) done + tested, not committed yet, not yet seen in the running app | 002d49b (1: clock + helpers), 851d7c0 (2: live countdown), 6557fa9 (3: Expired state + add blocked) | See "F-1 plan" and "F-1 notes" below |
 | F-2 Impressions | todo | | |
 | F-3 Reservations | todo | | Expiry policy decision: |
 | solutions.md | todo | | |
@@ -490,8 +490,42 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
     fake_api_service.dart / assets/data is empty against both HEAD and the starter commit e5ee445.
     Rule for the rest of the work: format only files named explicitly. (Candidate for AI_LOG.md.)
   - Not handled yet: a deal that expires while in the bag is not removed (commit 4).
+  - EMULATOR CONFIRMED 2026-10-11 by me: the details screen flipped from a running countdown (07:04) to
+    "Flash sale ended" with a disabled "Expired" button; a rail card greyed out with "Expired" while another deal
+    in the rail kept counting down. Screenshots: docs/after/14_f1_details_running.png,
+    docs/after/14_f1_details_expired.png, docs/after/14_f1_expired.png.
+  - Not recorded from the emulator: the feed/search card at expiry, the disabled tap on an expired card, and
+    "Added to bag" not showing at the stock limit (all covered by tests).
+  - "BEFORE" EVIDENCE FOR COMMIT 4: an expired flash deal is still in the bag (expected at this point).
+    Screenshot: docs/before/15_f1_bag_expired_still_there.png.
+
+- COMMIT 3 committed as 6557fa9.
+- COMMIT 4 done 2026-10-11 (not committed yet, not yet seen in the running app). Last F-1 commit.
+  - `lib/service/cart_service.dart`: in `onInit` the cart listens to the shared clock with a worker
+    (`ever(clock.now, _removeExpiredFlashDeals)`), disposed in `onClose`. On each tick it removes every line whose
+    deal `isFlashExpiredAt(now)`, recounts, and calls `onFlashSaleExpired(deal)` ONCE per removed deal (not per
+    unit). `onFlashSaleExpired` is an optional function passed to the constructor.
+  - `lib/main.dart`: passes `showFlashSaleExpiredNotice`, which shows a snackbar "Flash sale ended — <name> was
+    removed from your bag" for 4 s. The cart service itself never touches the UI, so it stays unit-testable.
+  - Works with no bag screen open: the cart is an app-wide permanent service, so the worker runs on every tick
+    whichever screen is showing.
+  - Tests first, on the old code: 2 tests FAILED at assertion level, matching the "before" screenshot
+    (docs/before/15_f1_bag_expired_still_there.png) — expected the bag empty, actual still held the line; expected
+    ids `[2, 3]`, actual `[1, 2, 3]`.
+  - Added with the implementation (the notice hook did not exist before): notice once per deal however many units;
+    not repeated on later ticks; one per deal when two sales end on the same tick; none when nothing expired;
+    nothing happens after the service is closed. Plus one end-to-end widget test (`test/main_flash_notice_test.dart`):
+    services wired like main.dart on the fake clock, a non-bag screen showing, deal ends after 10 s → bag empty and
+    the snackbar text is on screen.
+  - After: cart tests 14/14, full suite 102/102, analyze no issues. Formatted ONLY the 4 changed files.
+  - DOCUMENTED LIMITS (decision 2): the notice is a snackbar only. If the sale ends while the app is in the
+    background, the line is removed on the first tick after returning and the snackbar shows then — but if the
+    user is not looking at the phone during those 4 s it is missed, and there is no lasting record in the bag.
+  - Not handled on purpose: a checkout request already in flight when the sale ends (the server has no flash-expiry
+    rule, so it would go through); expiry is judged by the phone's clock.
+  - Not verified by me: the snackbar in the real app.
 
 ## Next step
-- F-1 commit 3: emulator check, then commit. Then commit 4 (remove expired lines from the bag with a notice).
+- F-1 commit 4: emulator check, then commit. That completes F-1. Then F-2 / F-3 if time allows, then solutions.md.
 - Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
 - Then F-1, then F-2 / F-3 if time allows, then solutions.md.

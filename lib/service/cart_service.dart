@@ -13,10 +13,48 @@ class CartService extends GetxService {
   /// The app's shared clock, used to tell whether a flash sale is over.
   final ClockService clock;
 
-  CartService({required this.clock});
+  /// Called once for each deal that is removed from the bag because its
+  /// flash sale ended. The app passes a function that shows a notice; the
+  /// cart itself knows nothing about the screen, so it stays testable.
+  final void Function(DealModel deal)? onFlashSaleExpired;
+
+  CartService({required this.clock, this.onFlashSaleExpired});
 
   final items = <CartItemModel>[].obs;
   final itemCount = 0.obs;
+
+  /// Listener on the shared clock, ended in [onClose].
+  Worker? _clockWorker;
+
+  @override
+  void onInit() {
+    super.onInit();
+    // The cart lives for the whole app, so this runs on every clock tick
+    // whichever screen is open — the bag screen does not have to be.
+    _clockWorker = ever(clock.now, _removeExpiredFlashDeals);
+  }
+
+  @override
+  void onClose() {
+    _clockWorker?.dispose();
+    super.onClose();
+  }
+
+  /// Takes every line whose flash sale is over at [now] out of the bag.
+  void _removeExpiredFlashDeals(DateTime now) {
+    final expired = [
+      for (final item in items)
+        if (item.deal.isFlashExpiredAt(now)) item.deal,
+    ];
+    if (expired.isEmpty) return;
+
+    items.removeWhere((i) => i.deal.isFlashExpiredAt(now));
+    _recount();
+    for (final deal in expired) {
+      LogService.log('cart: removed deal ${deal.id}, its flash sale ended');
+      onFlashSaleExpired?.call(deal);
+    }
+  }
 
   /// Adds one of [deal] to the bag. Returns true if it was added, and false
   /// if it was refused: the flash sale is over, or the bag already holds all

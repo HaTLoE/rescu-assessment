@@ -25,6 +25,11 @@
 - What the AI suggested: Claude Code predicted "no highlighted images" in the feed after decoding images at display size.
 - How I caught it: Claude Code checked its own claim against the Flutter 3.27 source (painting/decoration_image.dart) before I measured: an image is flagged when its decoded size exceeds the visible box by more than 128 KB, and a cover-cropped 4:3 photo in a wide card still does.
 - What I did instead: use the decode size in the console line ("display size A×B but a decode size of C×D") as the before/after evidence, not whether the image is flipped. Confirmed on the emulator: feed images are still flagged after the fix (cover crop), while the feed card's decode size went from 1600×1200 (+7821 KB) to 996×747 (+1696 KB).
+### Example 4
+- Date / ticket: 2026-10-11, F-1 commit 3
+- What the AI suggested/did: Claude Code ran dart format on the whole lib/ and test/ folders instead of only the changed files, which reformatted 5 unrelated files including the forbidden lib/service/fake_api_service.dart.
+- How I caught it: Claude Code noticed it in the formatter output and reported it; I then verified myself with git status and `git diff e5ee445 --stat -- lib/service/fake_api_service.dart assets/data` (empty).
+- What I did instead: restored the files from git, and the rule is now "format only the files you changed".
 
 ## Suggestions I modified or rejected (smaller ones)
 - I modified: RES-101: Claude’s first sketch put the stale check before the error log, so stale failures would leave no trace. It moved the log above the check during implementation.
