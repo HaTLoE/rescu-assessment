@@ -16,7 +16,7 @@ Starter commit (upstream/main): e5ee445
 | RES-102 My Orders crash | done — fixed + tested + confirmed on emulator | 2b0dde3 | Emulator re-check after the fix: opened My orders and pressed back twice, no "setState() called after dispose()" error (docs/after/09_res102_no_error.png). See "RES-102 notes" below. Reproduced on emulator 2026-10-10: open My orders, press back → "setState() called after dispose(): _PickupCountdownState" at pickup_countdown.dart:22:7 |
 | RES-103 Request pile-up | done — fixed + tested + confirmed on emulator | 98a1539 | Reproduced on emulator 2026-10-10 before the fix: viewed deals 1, 4, 6, 7, then one Add to bag on deal 7 → 4 requests (deals 6, 4, 7, 1). After the fix (full restart): one Add to bag on deal 7 → one re-check and one `GET /deals/7`. See "RES-103 notes" below |
 | RES-104 Duplicate deals | done — both commits; footer fix confirmed on emulator (page 2 loads again after refresh); the race itself was never reproduced by hand, proven by tests | ee103c7 (A: race), 64c64b7 (B: refresh failure + footer) | See "RES-104 notes" below. Manual attempt 2026-10-10: console showed `GET /deals?page=2` then `GET /deals?page=1` twelve seconds later, so the two requests did not overlap. `getDeals` latency is 250–950 ms, so the race window is under 1 s. Cause is from code reading; to be proven by a Completer-based test |
-| RES-105 Feed jank / memory | in progress — commit 1 of 3 done and re-measured (DealCard 855→98, AppBar 154→2); commit 2 (lazy list + keys) planned; commit 3 (image decode size) to do | e165484 (1: scope the Obx) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
+| RES-105 Feed jank / memory | in progress — commit 1 of 3 done and re-measured (DealCard 855→98, AppBar 154→2); commit 2 (lazy list + keys) done and A/B measured on the filter toggle (DealCard 102→15); commit 3 (image decode size) in progress | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
 | F-1 Countdowns | todo | | |
@@ -292,13 +292,14 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
     | CachedNetworkImage | 927 | 98 |
     | Obx / SmartRefresher (body, home_screen.dart:70/78) | 154 (old outer Obx) | 4–5 |
 
-    Screenshots: docs/after/13_res105_c1_rebuilds_cards.png, docs/after/13_res105_c1_rebuilds_top.png.
+    Screenshots: docs/after/13_res105_c1_rebuilds_card.png, docs/after/13_res105_c1_rebuilds_top.png.
     The AppBar screenshot was taken a bit later in the same run, so the card counts visible IN THAT screenshot are
     higher than 98; the 98 comes from the cards screenshot.
   - Frames are STILL janky on the raster side after commit 1 (as expected from the baseline frame chart). So commit 1
     is evidence of removed rebuilds only — no frame-time improvement is claimed.
 
-- COMMIT 2 done 2026-10-11 (not committed yet, not yet re-measured): in `home_screen.dart` the feed
+- COMMIT 2 done 2026-10-11, committed as 3c409f8 (the A/B toggle notes below were written after that commit and
+  go in with commit 3's PROGRESS update): in `home_screen.dart` the feed
   `ListView(children: [...])` is now a `CustomScrollView`: flash rail, header row and bottom spacer each in a
   `SliverToBoxAdapter`, and the cards in `SliverList.builder` with `DealCard(key: ValueKey(deal.id), ...)`.
   `visibleDeals` is read once per body rebuild. `SmartRefresher` takes the slivers out of any `ScrollView` child
@@ -317,12 +318,62 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
     lazy at the element level.
   - Not handled on purpose: duplicate ids from a real backend that paginates by offset (two cards with the same
     key); the fake catalog is static. Worth one line in solutions.md.
-  - TO RE-MEASURE: same ~30 s Rebuild Stats run; DealCard count for a "Pickup today" toggle on and off;
-    functional check of pull-to-refresh, load-more to "no more data", scroll-to-top, flash rail/header scrolling.
+  - RE-MEASURED 2026-10-11 — A/B TOGGLE TEST, measured by me (emulator, debug). Same steps for both: top of the
+    feed, Clear, about 3x "Pickup today" on/off, no scrolling:
+
+    | Widget | Commit 1 code (commit 2 stashed; DealCard at home_screen.dart:106) | Commit 2 code (home_screen.dart:119) |
+    |---|---|---|
+    | DealCard | 102 | 15 |
+    | CachedNetworkImage | 130 | 35 |
+    | FilterChip | not recorded | 5 |
+
+    Screenshots: docs/after/13_res105_c1_toggle.png, docs/after/13_res105_c2_toggle.png.
+    Caveats, stated honestly:
+    - The tap count is not exact. FilterChip shows 5 builds on the commit 2 run, so it was possibly 5 taps, not 6.
+      The two runs may differ by a tap. The gap (102 vs 15) is far larger than one tap can explain.
+    - The ~30 s SCROLL run on commit 2 gave DealCard 287, but it is NOT comparable with commit 1's 98: I scrolled
+      further and loaded more pages (7 body rebuilds). No scroll comparison is claimed for commit 2.
+    - Two single-tap readings (24 and 27) were uncontrolled and are not used as evidence.
+  - AI prediction was WRONG here: Claude said commit 2's measurable gain would be small ("rebuild counts ≈ commit 1",
+    "DevTools shows little of it"). The controlled toggle test shows a large drop in card builds for a filter
+    toggle. Why the old `ListView(children:)` built so many cards per toggle has not been investigated.
+    Caught by an A/B measurement on the emulator instead of trusting the expectation. (Candidate for AI_LOG.md.)
+  - Functional check after commit 2 (pull-to-refresh, load-more to "no more data", scroll-to-top, flash rail /
+    header scrolling): not recorded yet. The scroll run did load more pages, so load-more works at least that far.
 - Housekeeping 2026-10-11: PROMPT.md's two RES-105 lines now say emulator DEBUG mode (no physical device), matching
-  CLAUDE.md; RES-102 row updated with the emulator re-check.
+  CLAUDE.md (committed as 73d86d0); RES-102 row updated with the emulator re-check.
+
+- COMMIT 3 done 2026-10-11 (not committed yet, not yet re-measured, not yet looked at in the running app):
+  `lib/feature/shared_widget/the_network_image.dart` now decodes each image at the size of the box it is shown in.
+  - A pure function `decodeSizeForBox(boxWidth, boxHeight, devicePixelRatio)` returns ONE dimension in real pixels
+    (so the image keeps its shape): the width when the box is at least as wide as the image shape
+    (`apiImageAspectRatio = 4 / 3`, named constant — every API image URL asks for 1600x1200), otherwise the height.
+    Rounded up. An unknown (infinite) side is ignored; with no known side the image is decoded at full size as before.
+  - `TheNetworkImage` wraps `CachedNetworkImage` in a `LayoutBuilder` to learn the real box, multiplies by
+    `MediaQuery.devicePixelRatioOf`, and passes `memCacheWidth` OR `memCacheHeight`. No global image cache setting
+    was changed.
+  - Tests (`test/feature/shared_widget/the_network_image_test.dart`): 3 widget tests written first FAILED on the
+    old code (`memCacheWidth` / `memCacheHeight` were `null`, e.g. expected 760, actual null). The 8 unit tests of
+    the pure function could not be run red: the function did not exist before (compile error), so the widget tests
+    are the red→green proof. After: 11/11 here, full suite 55/55, analyze no issues.
+  - One unit test checks every usage (feed card on a 320- and 411-wide phone, flash rail, details header narrow
+    and wide, 64x64 thumbnails): the decoded 4:3 image covers the box in both directions → nothing is upscaled.
+  - AI prediction CORRECTED before measuring: Claude earlier said "expect no highlighted images" after this fix.
+    Checked against Flutter 3.27 source (`painting/decoration_image.dart`): an image is flagged when its decoded
+    bytes exceed the bytes of the VISIBLE box by more than 128 KB. With `BoxFit.cover`, a 4:3 image in a wide box
+    is cropped, and the cropped-away part still counts. So feed cards, flash rail and the details header will
+    most likely STILL be flipped by "Highlight oversized images" (the 64x64 thumbnails should not be).
+    The usable evidence is the console line Flutter prints for each flagged image:
+    "Image … has a display size of A×B but a decode size of C×D, which uses an additional N KB" — compare C×D and N
+    before vs after. (Candidate for AI_LOG.md.)
+  - Known trade-off: the same photo shown at different sizes (feed card, flash rail, details header) is decoded
+    once per size; each is smaller than one full-size decode.
+  - Not handled on purpose: an API image that is not 4:3 could be slightly soft (never a crash).
+  - TO RE-MEASURE / CHECK: see chat steps — console decode-size lines before vs after, meminfo after pages 1–6,
+    and a visual sharpness check of all five places.
 
 ## Next step
-- RES-105 commit 2: re-measure + functional check on the emulator, then commit.
+- RES-105 commit 3: re-measure + visual check on the emulator, then commit (PROGRESS.md also carries the commit 2
+  A/B toggle notes).
 - Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
 - Then F-1, then F-2 / F-3 if time allows, then solutions.md.
