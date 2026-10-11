@@ -62,7 +62,9 @@ Investigate: broad `Obx`, eager vs lazy list building, keys, repeated computatio
 state updates during scroll, repeated API calls.
 Requirements: explain each cause with evidence; lazy lists; tight `Obx` scope; keep scroll + pagination correct;
 no arbitrary global cache limits; don't remove images or features.
-IMPORTANT: before ANY change, stop and remind me to capture "before" DevTools evidence in PROFILE mode. Give me exact steps.
+IMPORTANT: before ANY change, stop and remind me to capture "before" DevTools evidence on the Android emulator in
+DEBUG mode (I have no physical device). Give me exact steps.
+Frame times from debug mode are not representative — use rebuild counts and memory/image evidence instead.
 Never write numbers I didn't give you.
 
 ### RES-106 — Wrong pickup times; "Pickup today" misses deals
@@ -121,7 +123,7 @@ A. Summary: done / not done / key decisions / what is actually verified.
 B. Per ticket/feature: symptom, root cause (with code refs), files, why this fix, ≥1 rejected alternative and why,
    edge cases handled AND edge cases deliberately NOT handled (with reason), tests added, commands + real results, limitations.
    Unfinished items: what was investigated, what remains, next step.
-C. RES-105 evidence: device, Flutter version, profile mode, scenario, before/after screenshots or numbers, interpretation.
+C. RES-105 evidence: device (Android emulator), Flutter version, build mode (debug — no physical device), scenario, before/after screenshots or numbers, interpretation.
 D. F-3 expiry decision: chosen policy, alternatives, why.
 E. AI usage log: tools used and for what; accepted/modified/rejected suggestions; how verified;
    ≥2 REAL examples where AI was wrong or misleading (from AI_LOG.md — never invented).
