@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 
 import '../../app_config.dart';
 import '../../model/deal_model.dart';
+import '../shared_widget/flash_countdown.dart';
 import '../shared_widget/the_network_image.dart';
 import 'deal_details_controller.dart';
 
@@ -43,6 +44,7 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
   }
 
   Widget _buildDeal(DealModel deal) {
+    final endsAt = deal.flashSaleEndsAt;
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -93,6 +95,24 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
                           )),
                     ],
                   ),
+                  if (endsAt != null) ...[
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.bolt, size: 18, color: Colors.red.shade700),
+                        const SizedBox(width: 4),
+                        Text('Flash sale ends in ',
+                            style: TextStyle(
+                                fontSize: 14, color: Colors.red.shade700)),
+                        FlashCountdown(
+                            endsAt: endsAt,
+                            style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.red.shade700)),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   Container(
                     padding: const EdgeInsets.all(12),

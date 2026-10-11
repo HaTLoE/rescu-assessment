@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../app_config.dart';
 import '../../model/deal_model.dart';
 import '../../routes/routes.dart';
+import 'flash_countdown.dart';
 import 'the_network_image.dart';
 
 /// Deal card used in the home feed and search results.
@@ -13,8 +14,12 @@ class DealCard extends StatelessWidget {
 
   const DealCard({super.key, required this.deal, this.source = 'home'});
 
+  static const _flashBadgeStyle =
+      TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold);
+
   @override
   Widget build(BuildContext context) {
+    final endsAt = deal.flashSaleEndsAt;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       clipBehavior: Clip.antiAlias,
@@ -30,23 +35,30 @@ class DealCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                TheNetworkImage(url: deal.imageUrl, height: 160, width: double.infinity),
-                if (deal.isFlashSale)
+                TheNetworkImage(
+                    url: deal.imageUrl, height: 160, width: double.infinity),
+                if (endsAt != null)
                   Positioned(
                     top: 8,
                     left: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.red.shade600,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'FLASH SALE',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text(
+                            'FLASH SALE',
+                            style: _flashBadgeStyle,
+                          ),
+                          const SizedBox(width: 6),
+                          FlashCountdown(
+                              endsAt: endsAt, style: _flashBadgeStyle),
+                        ],
                       ),
                     ),
                   ),
@@ -54,7 +66,8 @@ class DealCard extends StatelessWidget {
                   top: 8,
                   right: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.black.withValues(alpha: 0.65),
                       borderRadius: BorderRadius.circular(6),

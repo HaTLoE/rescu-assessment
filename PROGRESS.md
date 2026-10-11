@@ -19,7 +19,7 @@ Starter commit (upstream/main): e5ee445
 | RES-105 Feed jank / memory | done — 3 commits, each measured on the emulator in debug mode: (1) DealCard 855→98, AppBar 154→2 per ~30 s scroll; (2) DealCard 102→15 for ~3 filter toggles; (3) feed card decode 1600×1200 (+7821 KB) → 996×747 (+1696 KB). Memory growth "until the OS kills the app" was never reproduced; no frame-time claims. Visual sharpness check after commit 3 not recorded | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys), 5df71e4 (3: image decode size) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
-| F-1 Countdowns | in progress — commit 1 of 4 (clock service + pure helpers) done + tested, not committed yet; no visible change yet | | See "F-1 plan" and "F-1 notes" below |
+| F-1 Countdowns | in progress — commit 1 of 4 done; commit 2 (live countdown text in 3 places) done + tested, not committed yet, not yet seen or measured in the running app | 002d49b (1: clock + helpers) | See "F-1 plan" and "F-1 notes" below |
 | F-2 Impressions | todo | | |
 | F-3 Reservations | todo | | Expiry policy decision: |
 | solutions.md | todo | | |
@@ -416,7 +416,7 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
   Also: `ClockService` must be registered before `CartService` in `main.dart`.
 
 ## F-1 notes
-- COMMIT 1 done 2026-10-11 (not committed yet). No visible change in the app.
+- COMMIT 1 done 2026-10-11, committed as 002d49b. No visible change in the app.
   - `lib/service/clock_service.dart`: `ClockService` (GetxService) with ONE `Timer.periodic(1 s)` that sets
     `now` (Rx<DateTime>). The clock is injectable (`readClock`, default `DateTime.now`). Timer started in `onInit`,
     cancelled in `onClose`. Registered in `main.dart` as permanent, BEFORE `CartService`.
@@ -435,9 +435,27 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
     on a forced delete. The timer living for the whole app is the intended design (decision 5).
   - After: new tests 15/15 (7 format, 5 expiry, 3 clock), full suite 70/70, analyze no issues.
   - Not verified by me: that the app still starts on the emulator with the new service registered.
+- COMMIT 2 done 2026-10-11 (not committed yet, not yet seen or measured in the running app).
+  - New `lib/feature/shared_widget/flash_countdown.dart`: `FlashCountdown(endsAt, style)` = `Obx` around one
+    `Text` showing `formatCountdown(endsAt − clock.now)`. It is the only thing that reads the shared clock, so only
+    this text rebuilds each second. Uses tabular figures so the text width does not jiggle.
+  - Used in three places: flash rail (replaces the static "Ends soon" chip), feed/search card (next to the
+    "FLASH SALE" badge), details screen (new "Flash sale ends in …" row under the price).
+  - At zero the text reads `00:00` and stays there. The "Expired" state is commit 3.
+  - Tests first, on the old code: 3 screen-level tests FAILED at assertion level — card and details had no
+    "10:00" text; the rail still showed "Ends soon". After: those 3 pass, plus 5 `FlashCountdown` tests (mm:ss tick,
+    hh:mm:ss switching to mm:ss below an hour, stops at 00:00, parent not rebuilt, 150 countdowns do not rebuild
+    the list around them). Shared-widget tests 19/19, full suite 78/78, analyze no issues.
+  - Diff note: `dart format` also re-wrapped existing long lines in `deal_card.dart` (it was not format-clean).
+  - MEASURED 2026-10-11 by me (emulator, debug): DevTools Rebuild Stats, top of Home, ~30 s untouched after Clear.
+    ONLY `Obx` and `Text` at flash_countdown.dart rebuilt: 110 builds each; "latest frame" 5 = the 5 countdowns
+    visible. NO rows for DealCard, FlashDealsSection, Scaffold or AppBar.
+    Screenshot: docs/after/14_f1_rebuilds_idle.png.
+  - Seen running: the rail shows live countdowns (e.g. 23:06 and 06:06). Screenshot: docs/after/14_f1_countdown.png
+    (pairs with docs/before/14_f1_ends_soon.png).
+  - Not recorded: the same Rebuild Stats check on the DETAILS screen, and a deal above one hour showing hh:mm:ss.
 
 ## Next step
-- F-1 commit 1: quick emulator start check, then commit. Then commit 2 (live countdown text in the rail, the feed
-  card and the details screen) — that is where Rebuild Stats gets measured.
+- F-1 commit 2: commit. Then commit 3 (Expired state + add blocked).
 - Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
 - Then F-1, then F-2 / F-3 if time allows, then solutions.md.
