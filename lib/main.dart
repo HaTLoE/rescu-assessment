@@ -20,10 +20,10 @@ Future<void> main() async {
 Future<void> initDependencies() async {
   await Get.putAsync(() => FakeApiService().init(), permanent: true);
   Get.put(AnalyticsService(), permanent: true);
-  // Registered before CartService: the cart will depend on the clock to
-  // handle flash sales that end while a deal is in the bag.
+  // Registered before CartService: the cart needs the clock to refuse flash
+  // deals whose sale is over.
   Get.put(ClockService(), permanent: true);
-  Get.put(CartService(), permanent: true);
+  Get.put(CartService(clock: Get.find()), permanent: true);
   Get.lazyPut(() => DealRepo(api: Get.find()), fenix: true);
   Get.lazyPut(() => StoreRepo(api: Get.find()), fenix: true);
   Get.lazyPut(() => OrderRepo(api: Get.find()), fenix: true);

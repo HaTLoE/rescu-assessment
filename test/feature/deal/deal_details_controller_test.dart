@@ -9,6 +9,7 @@ import 'package:rescu/repository/deal_repo.dart';
 import 'package:rescu/service/analytics_service.dart';
 import 'package:rescu/service/api_exception.dart';
 import 'package:rescu/service/cart_service.dart';
+import 'package:rescu/service/clock_service.dart';
 import 'package:rescu/service/fake_api_service.dart';
 
 /// Records every `GET /deals/:id` and answers only when the test says so.
@@ -92,7 +93,9 @@ void main() {
 
   setUp(() {
     repo = FakeDealRepo();
-    cart = CartService();
+    cart = CartService(
+      clock: ClockService(readClock: () => DateTime.utc(2026, 1, 15)),
+    );
     analytics = AnalyticsService();
   });
 

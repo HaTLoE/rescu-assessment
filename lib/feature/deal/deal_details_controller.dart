@@ -112,7 +112,9 @@ class DealDetailsController extends GetxController {
   void addToCart() {
     final current = deal.value;
     if (current == null) return;
-    cartService.add(current);
+    // Only say "Added to bag" when the cart really took it. It refuses when
+    // the flash sale is over or the bag already holds all that are left.
+    if (!cartService.add(current)) return;
     Get.snackbar(
       'Added to bag',
       '${current.name} — pick up ${current.pickupWindow.label}',

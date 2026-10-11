@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import '../../app_config.dart';
 import '../../model/deal_model.dart';
 import '../shared_widget/flash_countdown.dart';
+import '../shared_widget/flash_expiry_builder.dart';
 import '../shared_widget/the_network_image.dart';
 import 'deal_details_controller.dart';
 
@@ -101,15 +102,29 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
                       children: [
                         Icon(Icons.bolt, size: 18, color: Colors.red.shade700),
                         const SizedBox(width: 4),
-                        Text('Flash sale ends in ',
-                            style: TextStyle(
-                                fontSize: 14, color: Colors.red.shade700)),
-                        FlashCountdown(
-                            endsAt: endsAt,
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.red.shade700)),
+                        // Flips once, when the sale ends.
+                        FlashExpiryBuilder(
+                          deal: deal,
+                          builder: (context, isExpired) => isExpired
+                              ? Text('Flash sale ended',
+                                  style: TextStyle(
+                                      fontSize: 14, color: Colors.red.shade700))
+                              : Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('Flash sale ends in ',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.red.shade700)),
+                                    FlashCountdown(
+                                        endsAt: endsAt,
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.red.shade700)),
+                                  ],
+                                ),
+                        ),
                       ],
                     ),
                   ],
@@ -183,10 +198,15 @@ class DealDetailsScreen extends GetView<DealDetailsController> {
         color: Colors.white,
         child: SizedBox(
           width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: controller.addToCart,
-            icon: const Icon(Icons.add_shopping_cart),
-            label: const Text('Add to bag'),
+          // The button flips once, when the flash sale ends: an expired deal
+          // can no longer be added to the bag.
+          child: FlashExpiryBuilder(
+            deal: deal,
+            builder: (context, isExpired) => FilledButton.icon(
+              onPressed: isExpired ? null : controller.addToCart,
+              icon: const Icon(Icons.add_shopping_cart),
+              label: Text(isExpired ? 'Expired' : 'Add to bag'),
+            ),
           ),
         ),
       ),

@@ -105,7 +105,7 @@ void main() {
     Get.routing.args = deal;
     Get.put(DealDetailsController(
       dealRepo: UnusedDealRepo(),
-      cartService: CartService(),
+      cartService: CartService(clock: Get.find()),
       analytics: AnalyticsService(),
     ));
     await tester.pumpWidget(const GetMaterialApp(home: DealDetailsScreen()));

@@ -3,21 +3,37 @@ import 'package:get/get.dart';
 import '../model/cart_item_model.dart';
 import '../model/deal_model.dart';
 import '../util/log_service.dart';
+import 'clock_service.dart';
 
 /// App-wide cart. Lives for the whole session.
 ///
 /// NOTE: the starter cart is purely local — it does not reserve stock on the
 /// backend. See the "Reservations" feature task in PROBLEM.md.
 class CartService extends GetxService {
+  /// The app's shared clock, used to tell whether a flash sale is over.
+  final ClockService clock;
+
+  CartService({required this.clock});
+
   final items = <CartItemModel>[].obs;
   final itemCount = 0.obs;
 
-  void add(DealModel deal) {
+  /// Adds one of [deal] to the bag. Returns true if it was added, and false
+  /// if it was refused: the flash sale is over, or the bag already holds all
+  /// that are left.
+  ///
+  /// Every "add to bag" in the app goes through here, so this is the one
+  /// place that stops an expired flash deal from being bought.
+  bool add(DealModel deal) {
+    if (deal.isFlashExpiredAt(clock.now.value)) {
+      LogService.log('cart: flash sale is over for deal ${deal.id}');
+      return false;
+    }
     final existing = items.firstWhereOrNull((i) => i.deal.id == deal.id);
     if (existing != null) {
       if (existing.quantity >= deal.quantityLeft) {
         LogService.log('cart: cannot add more of deal ${deal.id}');
-        return;
+        return false;
       }
       existing.quantity++;
       items.refresh();
@@ -25,6 +41,7 @@ class CartService extends GetxService {
       items.add(CartItemModel(deal: deal));
     }
     _recount();
+    return true;
   }
 
   void decrement(int dealId) {

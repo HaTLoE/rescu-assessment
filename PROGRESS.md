@@ -19,7 +19,7 @@ Starter commit (upstream/main): e5ee445
 | RES-105 Feed jank / memory | done — 3 commits, each measured on the emulator in debug mode: (1) DealCard 855→98, AppBar 154→2 per ~30 s scroll; (2) DealCard 102→15 for ~3 filter toggles; (3) feed card decode 1600×1200 (+7821 KB) → 996×747 (+1696 KB). Memory growth "until the OS kills the app" was never reproduced; no frame-time claims. Visual sharpness check after commit 3 not recorded | e165484 (1: scope the Obx), 3c409f8 (2: lazy list + keys), 5df71e4 (3: image decode size) | See "RES-105 notes" below. First baseline (morning 2026-10-10): Emulator Pixel API 37, debug mode, Flutter 3.27.0. ~30s scroll: Scaffold/AppBar rebuilt ~106x, DealCard 501x, CachedNetworkImage 709x; ~45-53 FPS with jank frames. ~3 min scroll pages 1-6: memory flat (~90MB Dart heap, ~400MB RSS) — growth NOT reproduced on emulator. Screenshots in docs/before/ |
 | RES-106 Pickup times / filter | done — fixed + tested + confirmed on emulator | 78cea08 | Decided 2026-10-10: show times in the phone's time zone (not a fixed market time zone). Emulator (time zone Asia/Bangkok) confirmed 2026-10-10: Baan Somtam Kitchen shows 05:30 – 08:00, Sunrise Bakehouse 06:00 – 09:30 (before the fix Baan Somtam showed 22:30 – 01:00). Screenshots: docs/before/06_res106_times.png, docs/after/06_res106_times.png. See "RES-106 notes" below |
 | RES-107 Deep link crash | done — fixed + tested + confirmed on emulator | 059be5c | Emulator confirmed 2026-10-10 after the fix: deep link id=42 loads the full page and Add to bag works; id=abc shows "This link is not valid."; feed cards open with no extra request; cold start via adb opens deal 42 and back returns to Home. See "RES-107 notes" below. Reproduced on emulator 2026-10-10 via Home ⋮ → Simulate deep link (`rescu://open/deal?id=42&source=push`): red screen "type 'Null' is not a subtype of type 'DealModel' in type cast". Screenshot: docs/before/11_res107_screen.png. Cold start via adb NOT yet tried |
-| F-1 Countdowns | in progress — commit 1 of 4 done; commit 2 (live countdown text in 3 places) done + tested, not committed yet, not yet seen or measured in the running app | 002d49b (1: clock + helpers) | See "F-1 plan" and "F-1 notes" below |
+| F-1 Countdowns | in progress — commits 1–2 done (commit 2 measured: only Obx/Text at flash_countdown.dart rebuild per second); commit 3 (Expired state + add blocked) done + tested, not committed yet, not yet seen in the running app; commit 4 (remove from bag with notice) to do | 002d49b (1: clock + helpers), 851d7c0 (2: live countdown) | See "F-1 plan" and "F-1 notes" below |
 | F-2 Impressions | todo | | |
 | F-3 Reservations | todo | | Expiry policy decision: |
 | solutions.md | todo | | |
@@ -455,7 +455,43 @@ No pre-existing failures. Not run: the app itself, any device/emulator build.
     (pairs with docs/before/14_f1_ends_soon.png).
   - Not recorded: the same Rebuild Stats check on the DETAILS screen, and a deal above one hour showing hh:mm:ss.
 
+- COMMIT 2 committed as 851d7c0.
+- COMMIT 3 done 2026-10-11 (not committed yet, not yet seen in the running app).
+  - New `lib/feature/shared_widget/flash_expiry_builder.dart`: `FlashExpiryBuilder(deal, builder)` — a small
+    StatefulWidget that listens to the shared clock with a worker and calls `setState` ONLY when
+    `deal.isFlashExpiredAt(now)` flips to true, then stops listening. The worker is disposed in `dispose`
+    (the clock lives for the whole app — same ownership lesson as RES-103). Non-flash deals: no listener at all.
+  - Feed/search card (`deal_card.dart`) and flash rail card (`flash_deals_section.dart`): at expiry the card is
+    greyed (opacity 0.5), the badge/chip reads "EXPIRED" / "Expired" instead of the countdown, and the tap is
+    disabled (`onTap: null`).
+  - Details screen: the flash row reads "Flash sale ended", and the button is disabled and reads "Expired".
+  - `CartService` now takes the clock (`CartService({required this.clock})`, wired in `main.dart`). `add` refuses
+    a deal whose flash sale is over and RETURNS BOOL (true = added; false = refused: sale over, or the bag already
+    holds all that are left). It reads the same `clock.now` value as the UI, so button and service always agree.
+  - SEPARATE SMALL FIX (call out in solutions.md): `DealDetailsController.addToCart` showed "Added to bag" even
+    when the cart silently refused the add at the stock limit. It now shows it only when `add` returns true.
+    When refused it shows nothing (the service logs why) — a "no more left" message would be a possible follow-up.
+  - Tests first, on the old code: 4 screen-level tests FAILED at assertion level (no "EXPIRED"/"Expired" text;
+    details still showed "Add to bag"). One of them first failed with a StateError that was my test's fault
+    (`find.byType(FilledButton)` does not match `FilledButton.icon`, which builds a subclass) — fixed the finder
+    and re-ran on the old code to get the real failure.
+  - Added with the implementation: 6 `CartService.add` tests, 4 `FlashExpiryBuilder` tests (builds once before
+    expiry over 9 ticks, once more at expiry, never again; already-expired on first build; non-flash needs no
+    clock; removing the widget stops the listener), 1 details test for "Added to bag".
+    The "Added to bag" test was proven meaningful by temporarily putting the old line back: it failed
+    (found 1 "Added to bag" where none was expected), then the code was restored.
+  - 3 existing test setups now pass a clock to `CartService` (constructor change only, assertions untouched).
+  - After: full suite 93/93, analyze no issues.
+  - MY MISTAKE during this commit: I ran `dart format lib test` on the whole project instead of only the changed
+    files. It reformatted 5 files I must not touch in this commit, INCLUDING `lib/service/fake_api_service.dart`
+    (hard rule 1). Caught from the formatter's output in the same step. Fixed immediately: restored each file's
+    content from the last commit (`git show HEAD:<file>`, no git add/commit/restore used) and put back the Windows
+    line endings. Verified: the 5 files no longer appear in `git status`; `git diff --stat` for
+    fake_api_service.dart / assets/data is empty against both HEAD and the starter commit e5ee445.
+    Rule for the rest of the work: format only files named explicitly. (Candidate for AI_LOG.md.)
+  - Not handled yet: a deal that expires while in the bag is not removed (commit 4).
+
 ## Next step
-- F-1 commit 2: commit. Then commit 3 (Expired state + add blocked).
+- F-1 commit 3: emulator check, then commit. Then commit 4 (remove expired lines from the bag with a notice).
 - Then RES-105 commit 3 (image decode size). Its "before" evidence is already in docs/before/13_*.
 - Then F-1, then F-2 / F-3 if time allows, then solutions.md.

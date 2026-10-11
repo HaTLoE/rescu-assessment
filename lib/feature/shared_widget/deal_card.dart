@@ -5,6 +5,7 @@ import '../../app_config.dart';
 import '../../model/deal_model.dart';
 import '../../routes/routes.dart';
 import 'flash_countdown.dart';
+import 'flash_expiry_builder.dart';
 import 'the_network_image.dart';
 
 /// Deal card used in the home feed and search results.
@@ -19,6 +20,18 @@ class DealCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The card itself changes only once, when its flash sale ends: it is
+    // greyed out and can no longer be opened.
+    return FlashExpiryBuilder(
+      deal: deal,
+      builder: (context, isExpired) => Opacity(
+        opacity: isExpired ? 0.5 : 1,
+        child: _buildCard(isExpired),
+      ),
+    );
+  }
+
+  Widget _buildCard(bool isExpired) {
     final endsAt = deal.flashSaleEndsAt;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -26,10 +39,12 @@ class DealCard extends StatelessWidget {
       color: Colors.white,
       elevation: 0.5,
       child: InkWell(
-        onTap: () => Get.toNamed(
-          Routes.dealRoute(deal.id, source: source),
-          arguments: deal,
-        ),
+        onTap: isExpired
+            ? null
+            : () => Get.toNamed(
+                  Routes.dealRoute(deal.id, source: source),
+                  arguments: deal,
+                ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -45,21 +60,25 @@ class DealCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
-                        color: Colors.red.shade600,
+                        color: isExpired
+                            ? Colors.grey.shade700
+                            : Colors.red.shade600,
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Text(
-                            'FLASH SALE',
-                            style: _flashBadgeStyle,
-                          ),
-                          const SizedBox(width: 6),
-                          FlashCountdown(
-                              endsAt: endsAt, style: _flashBadgeStyle),
-                        ],
-                      ),
+                      child: isExpired
+                          ? const Text('EXPIRED', style: _flashBadgeStyle)
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'FLASH SALE',
+                                  style: _flashBadgeStyle,
+                                ),
+                                const SizedBox(width: 6),
+                                FlashCountdown(
+                                    endsAt: endsAt, style: _flashBadgeStyle),
+                              ],
+                            ),
                     ),
                   ),
                 Positioned(
